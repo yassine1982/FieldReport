@@ -2,7 +2,7 @@
 
 Mobile app for independent maintenance technicians to create professional intervention reports — clients, equipment, checklists, photos, signatures, and PDF export.
 
-**Current milestone:** Local New Report creation flow with checklist, observations, AsyncStorage persistence, and report detail views. Auth, Supabase, payments, PDF, photos, and signatures are intentionally not included yet.
+**Current milestone:** Local report drafts/editing, before/after photo evidence, and client-ready PDF preview/share — all on-device. Auth, Supabase, payments, and signatures are intentionally not included yet.
 
 ## Stack
 
@@ -47,10 +47,10 @@ src/
     report/[id].tsx    # Report detail
   components/ui/       # Button, Card, Input, Screen, AppText, EmptyState, StatusBadge
   context/             # ReportsProvider (live list + save)
-  services/            # AsyncStorage persistence
+  services/            # AsyncStorage, photo files, PDF generation
   features/
     home/              # Dashboard cards + recent reports from saved data
-    reports/           # Wizard steps, list, detail
+    reports/           # Wizard steps, list, detail, PDF actions
     clients|settings/  # Placeholders
   types/report.ts      # Report, checklist, draft types
   utils/               # IDs, stats, date helpers
@@ -59,6 +59,8 @@ src/
 Path alias: `@/*` → `src/*`
 
 Local reports are stored with `@react-native-async-storage/async-storage` under key `fieldreport.reports.v1`.
+
+Photo evidence files live under the app document directory (`report-photos/`). Generated PDFs are written to `report-pdfs/` in the same document directory (not AsyncStorage).
 
 ## Design system
 
@@ -73,10 +75,11 @@ Professional blue / white palette with reusable tokens:
 ## Product roadmap (high level)
 
 1. Home + design system
-2. Local report creation + persistence *(this milestone)*
-3. Photos + client signature
-4. PDF export / sharing
-5. Auth, sync, Free/Pro limits
+2. Local report creation + draft lifecycle
+3. Photos & evidence
+4. PDF export / sharing *(this milestone)*
+5. Client signature
+6. Auth, sync, Free/Pro limits
 
 ## License
 

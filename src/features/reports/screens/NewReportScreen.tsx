@@ -18,6 +18,7 @@ import { createDefaultChecklist } from '@/data/default-checklist';
 import { ChecklistStep } from '@/features/reports/components/steps/ChecklistStep';
 import { ClientDetailsStep } from '@/features/reports/components/steps/ClientDetailsStep';
 import { ObservationsStep } from '@/features/reports/components/steps/ObservationsStep';
+import { PhotosStep } from '@/features/reports/components/steps/PhotosStep';
 import { ReviewStep } from '@/features/reports/components/steps/ReviewStep';
 import { StepHeader } from '@/features/reports/components/StepHeader';
 import { WizardFooter } from '@/features/reports/components/WizardFooter';
@@ -27,22 +28,26 @@ import {
   validateStep1,
   validateStep2,
   validateStep3,
+  validateStep4,
   type Step1Errors,
   type Step2Errors,
   type Step3Errors,
+  type Step4Errors,
 } from '@/features/reports/utils/validation';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { deletePhotoFiles } from '@/services/photo-storage';
 import type { ChecklistItemStatus, NewReportDraft, Report } from '@/types/report';
 import {
   buildReport,
   isDraftDirty,
+  photoUris,
   reportToDraft,
   serializeDraft,
   todayIsoDate,
 } from '@/utils/report-helpers';
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5;
 
 function createInitialDraft(): NewReportDraft {
   return {
@@ -54,6 +59,7 @@ function createInitialDraft(): NewReportDraft {
     checklist: createDefaultChecklist(),
     observations: '',
     identifiedIssues: [],
+    photos: [],
   };
 }
 
@@ -85,15 +91,38 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
   const [step1Errors, setStep1Errors] = useState<Step1Errors>({});
   const [step2Errors, setStep2Errors] = useState<Step2Errors>({});
   const [step3Errors, setStep3Errors] = useState<Step3Errors>({});
+  const [step4Errors, setStep4Errors] = useState<Step4Errors>({});
   const [savingDraft, setSavingDraft] = useState(false);
   const [savingComplete, setSavingComplete] = useState(false);
 
   const allowLeaveRef = useRef(false);
+  /** URIs copied into app storage during this wizard session (not yet committed by a save). */
+  const sessionPersistedUrisRef = useRef<Set<string>>(new Set());
+  /** Photo URIs that belong to the last successfully saved version of this report. */
+  const committedUrisRef = useRef<Set<string>>(new Set(photoUris(seedDraft.photos)));
+
   const dirty = isDraftDirty(draft, baseline);
+
+  const cleanupOrphanSessionPhotos = useCallback(async () => {
+    const orphans = [...sessionPersistedUrisRef.current].filter(
+      (uri) => !committedUrisRef.current.has(uri),
+    );
+    if (orphans.length > 0) {
+      await deletePhotoFiles(orphans);
+    }
+    sessionPersistedUrisRef.current.clear();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (event) => {
       if (allowLeaveRef.current || !dirty) {
+        if (allowLeaveRef.current && !dirty) {
+          // Saved leave — keep committed files.
+          return;
+        }
+        if (!dirty) {
+          void cleanupOrphanSessionPhotos();
+        }
         return;
       }
 
@@ -105,15 +134,18 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
           text: 'Discard',
           style: 'destructive',
           onPress: () => {
-            allowLeaveRef.current = true;
-            navigation.dispatch(event.data.action);
+            void (async () => {
+              await cleanupOrphanSessionPhotos();
+              allowLeaveRef.current = true;
+              navigation.dispatch(event.data.action);
+            })();
           },
         },
       ]);
     });
 
     return unsubscribe;
-  }, [navigation, dirty]);
+  }, [navigation, dirty, cleanupOrphanSessionPhotos]);
 
   const leaveWizard = useCallback(
     (href?: Href) => {
@@ -149,6 +181,11 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
           title: 'Observations',
           subtitle: 'Record findings and any identified issues.',
         };
+      case 4:
+        return {
+          title: 'Photos & evidence',
+          subtitle: 'Add optional before and after photos. You can skip this for drafts.',
+        };
       default:
         return {
           title: editingCompleted ? 'Review & update' : 'Review & save',
@@ -165,7 +202,7 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
 
   const requestLeave = () => {
     if (!dirty) {
-      leaveWizard();
+      void cleanupOrphanSessionPhotos().then(() => leaveWizard());
       return;
     }
     if (navigation.canGoBack()) {
@@ -177,7 +214,9 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
       {
         text: 'Discard',
         style: 'destructive',
-        onPress: () => leaveWizard('/reports'),
+        onPress: () => {
+          void cleanupOrphanSessionPhotos().then(() => leaveWizard('/reports'));
+        },
       },
     ]);
   };
@@ -208,6 +247,15 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
         return;
       }
       setStep(4);
+      return;
+    }
+    if (step === 4) {
+      const errors = validateStep4(draft);
+      setStep4Errors(errors);
+      if (hasErrors(errors)) {
+        return;
+      }
+      setStep(5);
     }
   };
 
@@ -220,15 +268,18 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
       status,
       existing: existingMeta ?? undefined,
     });
-    await saveReport(report);
-    setExistingMeta({ id: report.id, createdAt: report.createdAt });
+    const saved = await saveReport(report);
+    setExistingMeta({ id: saved.id, createdAt: saved.createdAt });
     setOriginalStatus(status);
     setBaseline(serializeDraft(draft));
-    return report;
+    committedUrisRef.current = new Set(photoUris(draft.photos));
+    sessionPersistedUrisRef.current.clear();
+    return saved;
   };
 
   const handleSaveDraft = async () => {
     setSavingDraft(true);
+    const photosSnapshot = draft.photos;
     try {
       const report = await persistReport('draft');
       Alert.alert('Draft saved', 'You can resume this report later from the Reports list.', [
@@ -247,6 +298,14 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
         },
       ]);
     } catch {
+      // Newly copied session files remain in the in-memory draft for retry.
+      // Only delete copies that somehow aren't referenced by the draft anymore.
+      const draftUris = new Set(photoUris(photosSnapshot));
+      const stray = [...sessionPersistedUrisRef.current].filter((uri) => !draftUris.has(uri));
+      if (stray.length > 0) {
+        await deletePhotoFiles(stray);
+        stray.forEach((uri) => sessionPersistedUrisRef.current.delete(uri));
+      }
       Alert.alert('Save failed', 'Could not save the draft. Please try again.');
     } finally {
       setSavingDraft(false);
@@ -257,9 +316,11 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
     const errors1 = validateStep1(draft);
     const errors2 = validateStep2(draft.checklist);
     const errors3 = validateStep3(draft);
+    const errors4 = validateStep4(draft);
     setStep1Errors(errors1);
     setStep2Errors(errors2);
     setStep3Errors(errors3);
+    setStep4Errors(errors4);
 
     if (hasErrors(errors1)) {
       setStep(1);
@@ -276,8 +337,14 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
       Alert.alert('Observations needed', 'Add observations before finishing this report.');
       return;
     }
+    if (hasErrors(errors4)) {
+      setStep(4);
+      Alert.alert('Too many photos', errors4.photos ?? 'Reduce the number of photos.');
+      return;
+    }
 
     setSavingComplete(true);
+    const photosSnapshot = draft.photos;
     try {
       const wasCompleted = originalStatus === 'completed';
       const report = await persistReport('completed');
@@ -299,6 +366,12 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
         ],
       );
     } catch {
+      const draftUris = new Set(photoUris(photosSnapshot));
+      const stray = [...sessionPersistedUrisRef.current].filter((uri) => !draftUris.has(uri));
+      if (stray.length > 0) {
+        await deletePhotoFiles(stray);
+        stray.forEach((uri) => sessionPersistedUrisRef.current.delete(uri));
+      }
       Alert.alert('Save failed', 'Could not save the report. Please try again.');
     } finally {
       setSavingComplete(false);
@@ -307,7 +380,7 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
 
   const isEditingCompleted = originalStatus === 'completed';
   const nextLabel =
-    step === 4 ? (isEditingCompleted ? 'Save changes' : 'Mark completed') : 'Continue';
+    step === 5 ? (isEditingCompleted ? 'Save changes' : 'Mark completed') : 'Continue';
   const showSaveDraft = !isEditingCompleted;
 
   return (
@@ -383,11 +456,32 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
           />
         ) : null}
 
-        {step === 4 ? <ReviewStep draft={draft} /> : null}
+        {step === 4 ? (
+          <PhotosStep
+            draft={draft}
+            error={step4Errors.photos}
+            onChangePhotos={(photos) => {
+              const nextUris = new Set(photoUris(photos));
+              const removedSession = [...sessionPersistedUrisRef.current].filter(
+                (uri) => !nextUris.has(uri) && !committedUrisRef.current.has(uri),
+              );
+              if (removedSession.length > 0) {
+                void deletePhotoFiles(removedSession);
+                removedSession.forEach((uri) => sessionPersistedUrisRef.current.delete(uri));
+              }
+              updateDraft('photos', photos);
+            }}
+            onPhotoPersisted={(uri) => {
+              sessionPersistedUrisRef.current.add(uri);
+            }}
+          />
+        ) : null}
+
+        {step === 5 ? <ReviewStep draft={draft} /> : null}
 
         <WizardFooter
           onBack={step > 1 ? goBack : undefined}
-          onNext={step === 4 ? () => void handleSaveCompleted() : goNext}
+          onNext={step === 5 ? () => void handleSaveCompleted() : goNext}
           nextLabel={nextLabel}
           loading={savingComplete}
           disableNext={savingDraft}

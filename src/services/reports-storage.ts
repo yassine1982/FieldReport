@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { ChecklistItem, Report, ReportStatus } from '@/types/report';
+import type { ChecklistItem, Report, ReportPhoto, ReportStatus } from '@/types/report';
 
 const STORAGE_KEY = 'fieldreport.reports.v1';
 
@@ -19,6 +19,20 @@ function isChecklistItem(value: unknown): value is ChecklistItem {
   );
 }
 
+function isReportPhoto(value: unknown): value is ReportPhoto {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const photo = value as Record<string, unknown>;
+  return (
+    typeof photo.id === 'string' &&
+    typeof photo.uri === 'string' &&
+    (photo.category === 'before' || photo.category === 'after') &&
+    typeof photo.createdAt === 'string' &&
+    (photo.caption === undefined || typeof photo.caption === 'string')
+  );
+}
+
 /**
  * Reliable evidence a legacy record was unfinished:
  * - explicit status draft / in_progress
@@ -31,7 +45,21 @@ function resolveStatus(rawStatus: unknown): ReportStatus {
   return 'completed';
 }
 
-function normalizeReport(value: unknown): Report | null {
+function normalizePhotos(value: unknown): { photos: ReportPhoto[]; changed: boolean } {
+  if (value === undefined) {
+    return { photos: [], changed: true };
+  }
+  if (!Array.isArray(value)) {
+    return { photos: [], changed: true };
+  }
+  const photos = value.filter(isReportPhoto).map((photo) => ({
+    ...photo,
+    caption: photo.caption?.trim() ? photo.caption.trim() : undefined,
+  }));
+  return { photos, changed: photos.length !== value.length };
+}
+
+function normalizeReport(value: unknown): { report: Report; changed: boolean } | null {
   if (typeof value !== 'object' || value === null) {
     return null;
   }
@@ -56,20 +84,27 @@ function normalizeReport(value: unknown): Report | null {
 
   const contact =
     typeof report.clientContact === 'string' ? report.clientContact : undefined;
+  const status = resolveStatus(report.status);
+  const { photos, changed: photosChanged } = normalizePhotos(report.photos);
+  const statusChanged = report.status !== status;
 
   return {
-    id: report.id,
-    createdAt: report.createdAt,
-    updatedAt: report.updatedAt,
-    status: resolveStatus(report.status),
-    clientName: report.clientName,
-    clientContact: contact,
-    equipmentName: report.equipmentName,
-    interventionDate: report.interventionDate,
-    problemDescription: report.problemDescription,
-    checklist: report.checklist.map((item) => ({ ...item })),
-    observations: report.observations,
-    identifiedIssues: [...report.identifiedIssues],
+    report: {
+      id: report.id,
+      createdAt: report.createdAt,
+      updatedAt: report.updatedAt,
+      status,
+      clientName: report.clientName,
+      clientContact: contact,
+      equipmentName: report.equipmentName,
+      interventionDate: report.interventionDate,
+      problemDescription: report.problemDescription,
+      checklist: report.checklist.map((item) => ({ ...item })),
+      observations: report.observations,
+      identifiedIssues: [...report.identifiedIssues],
+      photos: photos.map((photo) => ({ ...photo })),
+    },
+    changed: statusChanged || photosChanged || !('photos' in report),
   };
 }
 
@@ -83,14 +118,8 @@ function migrateReports(parsed: unknown[]): { reports: Report[]; dirty: boolean 
       dirty = true;
       continue;
     }
-    reports.push(normalized);
-
-    if (typeof entry === 'object' && entry !== null) {
-      const status = (entry as Record<string, unknown>).status;
-      if (status !== normalized.status) {
-        dirty = true;
-      }
-    } else {
+    reports.push(normalized.report);
+    if (normalized.changed) {
       dirty = true;
     }
   }

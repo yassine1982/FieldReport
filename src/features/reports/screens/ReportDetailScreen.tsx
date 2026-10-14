@@ -8,6 +8,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useReports } from '@/context/ReportsContext';
+import { ReportPdfActions } from '@/features/reports/components/ReportPdfActions';
+import { ReportPhotosSection } from '@/features/reports/components/ReportPhotosSection';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { displayClientName, formatDisplayDate } from '@/utils/report-helpers';
@@ -83,6 +85,7 @@ export function ReportDetailScreen({ reportId }: ReportDetailScreenProps) {
           label={isDraft ? 'Resume draft' : 'Edit report'}
           onPress={() => router.push(editHref)}
         />
+        <ReportPdfActions report={report} />
         <Button label="Back to reports" variant="secondary" onPress={() => router.back()} />
       </View>
 
@@ -153,6 +156,8 @@ export function ReportDetailScreen({ reportId }: ReportDetailScreenProps) {
           ))
         )}
       </Card>
+
+      <ReportPhotosSection photos={report.photos ?? []} />
 
       <AppText variant="caption" color="textMuted">
         Created {formatDisplayDate(report.createdAt.slice(0, 10))} · Updated{' '}

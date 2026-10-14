@@ -1,4 +1,11 @@
-import type { NewReportDraft, Report, ReportStats, ReportStatus, ReportSummary } from '@/types/report';
+import type {
+  NewReportDraft,
+  Report,
+  ReportPhoto,
+  ReportStats,
+  ReportStatus,
+  ReportSummary,
+} from '@/types/report';
 
 export function createReportId(): string {
   const random = Math.random().toString(36).slice(2, 10);
@@ -28,6 +35,7 @@ export function toReportSummary(report: Report): ReportSummary {
     interventionDate: report.interventionDate,
     updatedAt: report.updatedAt,
     problemPreview: preview.length > 80 ? `${preview.slice(0, 77)}…` : preview,
+    photoCount: report.photos.length,
   };
 }
 
@@ -58,6 +66,13 @@ export function formatDisplayDate(isoDate: string): string {
   });
 }
 
+function clonePhotos(photos: ReportPhoto[]): ReportPhoto[] {
+  return photos.map((photo) => ({
+    ...photo,
+    caption: photo.caption,
+  }));
+}
+
 export function reportToDraft(report: Report): NewReportDraft {
   return {
     clientName: report.clientName,
@@ -68,6 +83,7 @@ export function reportToDraft(report: Report): NewReportDraft {
     checklist: report.checklist.map((item) => ({ ...item })),
     observations: report.observations,
     identifiedIssues: [...report.identifiedIssues],
+    photos: clonePhotos(report.photos ?? []),
   };
 }
 
@@ -95,6 +111,10 @@ export function buildReport(draft: NewReportDraft, options: BuildReportOptions):
     identifiedIssues: draft.identifiedIssues
       .map((issue) => issue.trim())
       .filter((issue) => issue.length > 0),
+    photos: draft.photos.map((photo) => ({
+      ...photo,
+      caption: photo.caption?.trim() ? photo.caption.trim() : undefined,
+    })),
   };
 }
 
@@ -116,9 +136,20 @@ export function serializeDraft(draft: NewReportDraft): string {
     checklist: draft.checklist,
     observations: draft.observations,
     identifiedIssues: draft.identifiedIssues,
+    photos: draft.photos.map((photo) => ({
+      id: photo.id,
+      uri: photo.uri,
+      category: photo.category,
+      caption: photo.caption ?? '',
+      createdAt: photo.createdAt,
+    })),
   });
 }
 
 export function isDraftDirty(current: NewReportDraft, baseline: string): boolean {
   return serializeDraft(current) !== baseline;
+}
+
+export function photoUris(photos: ReportPhoto[]): string[] {
+  return photos.map((photo) => photo.uri).filter(Boolean);
 }

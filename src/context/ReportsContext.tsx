@@ -8,10 +8,12 @@ import {
   type ReactNode,
 } from 'react';
 
+import { deleteUnreferencedPhotoFiles } from '@/services/photo-storage';
 import { loadReports, upsertReport } from '@/services/reports-storage';
 import type { Report, ReportStats, ReportSummary } from '@/types/report';
 import {
   getReportStats,
+  photoUris,
   sortReportsNewestFirst,
   toReportSummary,
 } from '@/utils/report-helpers';
@@ -78,12 +80,26 @@ export function ReportsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const saveReport = useCallback(async (report: Report) => {
-    const next = await upsertReport(report);
-    const sorted = sortReportsNewestFirst(next);
-    setReports(sorted);
-    return report;
-  }, []);
+  const saveReport = useCallback(
+    async (report: Report) => {
+      const previous = reports.find((item) => item.id === report.id);
+      const next = await upsertReport(report);
+      if (previous) {
+        const removedUris = photoUris(previous.photos ?? []).filter(
+          (uri) => !photoUris(report.photos ?? []).includes(uri),
+        );
+        try {
+          await deleteUnreferencedPhotoFiles(removedUris, next);
+        } catch {
+          // Metadata save already succeeded; orphan cleanup is best-effort.
+        }
+      }
+      const sorted = sortReportsNewestFirst(next);
+      setReports(sorted);
+      return report;
+    },
+    [reports],
+  );
 
   const getReport = useCallback(
     (id: string) => reports.find((report) => report.id === id),

@@ -1,3 +1,4 @@
+import { MAX_PHOTOS_PER_REPORT } from '@/services/photo-storage';
 import type { ChecklistItem, NewReportDraft } from '@/types/report';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -17,6 +18,10 @@ export type Step3Errors = Partial<{
   observations: string;
   identifiedIssues: string;
 }>;
+
+export type Step4Errors = {
+  photos?: string;
+};
 
 export function validateStep1(draft: NewReportDraft): Step1Errors {
   const errors: Step1Errors = {};
@@ -64,6 +69,14 @@ export function validateStep3(draft: NewReportDraft): Step3Errors {
   return errors;
 }
 
+/** Photos are optional; only enforce the per-report limit. */
+export function validateStep4(draft: NewReportDraft): Step4Errors {
+  if (draft.photos.length > MAX_PHOTOS_PER_REPORT) {
+    return { photos: `Limit is ${MAX_PHOTOS_PER_REPORT} photos per report.` };
+  }
+  return {};
+}
+
 export function hasErrors(errors: object): boolean {
   return Object.keys(errors).length > 0;
 }
@@ -82,5 +95,8 @@ export function inferWizardStep(draft: NewReportDraft): number {
   if (hasErrors(validateStep3(draft))) {
     return 3;
   }
-  return 4;
+  if (hasErrors(validateStep4(draft))) {
+    return 4;
+  }
+  return 5;
 }

@@ -1,9 +1,10 @@
+import { Image } from 'expo-image';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
-import { Spacing } from '@/constants/theme';
-import type { NewReportDraft } from '@/types/report';
+import { Radii, Spacing } from '@/constants/theme';
+import type { NewReportDraft, ReportPhoto } from '@/types/report';
 import { formatDisplayDate } from '@/utils/report-helpers';
 
 type ReviewStepProps = {
@@ -86,6 +87,31 @@ export function ReviewStep({ draft }: ReviewStepProps) {
             ))
         )}
       </Card>
+
+      <Card style={styles.section}>
+        <AppText variant="label" color="textMuted">
+          EVIDENCE PHOTOS
+        </AppText>
+        <AppText variant="body" color="textSecondary">
+          {draft.photos.length === 0
+            ? 'No photos attached'
+            : `${draft.photos.filter((p) => p.category === 'before').length} before · ${
+                draft.photos.filter((p) => p.category === 'after').length
+              } after`}
+        </AppText>
+        {draft.photos.length > 0 ? (
+          <View style={styles.photoRow}>
+            {draft.photos.slice(0, 6).map((photo: ReportPhoto) => (
+              <Image
+                key={photo.id}
+                source={{ uri: photo.uri }}
+                style={styles.thumb}
+                contentFit="cover"
+              />
+            ))}
+          </View>
+        ) : null}
+      </Card>
     </View>
   );
 }
@@ -96,5 +122,15 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: Spacing.two,
+  },
+  photoRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+  },
+  thumb: {
+    width: 56,
+    height: 56,
+    borderRadius: Radii.sm,
   },
 });

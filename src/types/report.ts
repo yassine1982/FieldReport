@@ -2,10 +2,21 @@ export type ReportStatus = 'draft' | 'completed';
 
 export type ChecklistItemStatus = 'pass' | 'fail' | 'na' | 'pending';
 
+export type PhotoCategory = 'before' | 'after';
+
 export type ChecklistItem = {
   id: string;
   label: string;
   status: ChecklistItemStatus;
+};
+
+export type ReportPhoto = {
+  id: string;
+  /** Persistent local file URI under the app document directory */
+  uri: string;
+  category: PhotoCategory;
+  caption?: string;
+  createdAt: string;
 };
 
 export type Report = {
@@ -22,6 +33,7 @@ export type Report = {
   checklist: ChecklistItem[];
   observations: string;
   identifiedIssues: string[];
+  photos: ReportPhoto[];
 };
 
 /** Lightweight list row derived from a full Report */
@@ -34,6 +46,7 @@ export type ReportSummary = {
   interventionDate: string;
   updatedAt: string;
   problemPreview: string;
+  photoCount: number;
 };
 
 export type ReportStats = {
@@ -51,4 +64,5 @@ export type NewReportDraft = {
   checklist: ChecklistItem[];
   observations: string;
   identifiedIssues: string[];
+  photos: ReportPhoto[];
 };
