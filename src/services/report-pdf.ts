@@ -4,10 +4,27 @@ import { File } from 'expo-file-system';
 import { Platform } from 'react-native';
 
 import { Palette } from '@/constants/theme';
+import {
+  hasCompanyBrandingName,
+  loadCompanyProfile,
+  resolveCompanyDisplayName,
+} from '@/services/company-storage';
 import { persistPdfFile, sanitizePdfFilename } from '@/services/pdf-storage';
 import { photoFileExists } from '@/services/photo-storage';
-import type { ChecklistItem, ChecklistItemStatus, Report, ReportPhoto } from '@/types/report';
-import { displayClientName, formatDisplayDate } from '@/utils/report-helpers';
+import { isSignatureCurrent, signatureFileExists } from '@/services/signature-storage';
+import type { CompanyProfile } from '@/types/company';
+import type {
+  ChecklistItem,
+  ChecklistItemStatus,
+  Report,
+  ReportPhoto,
+  ReportSignature,
+} from '@/types/report';
+import {
+  displayClientName,
+  formatDisplayDate,
+  formatDisplayDateTime,
+} from '@/utils/report-helpers';
 
 /** A4 at 72 PPI — expo-print uses points as pixels here. */
 const A4_WIDTH = 595;
@@ -47,6 +64,11 @@ export function assertCanExportReportPdf(report: Report): void {
 
 type ResolvedPhoto = {
   photo: ReportPhoto;
+  dataUri: string | null;
+  unavailableReason?: string;
+};
+
+type ResolvedImage = {
   dataUri: string | null;
   unavailableReason?: string;
 };
@@ -139,6 +161,45 @@ export function buildReportPdfFilename(report: Report): string {
   const date = report.interventionDate.trim() || 'undated';
   const ref = slugSegment(reportReference(report), 'report').slice(0, 16);
   return sanitizePdfFilename(`FieldReport_${client}_${date}_${ref}.pdf`);
+}
+
+async function resolveLocalImageUri(
+  uri: string | undefined,
+  unavailableLabel: string,
+): Promise<ResolvedImage> {
+  if (!uri) {
+    return { dataUri: null, unavailableReason: unavailableLabel };
+  }
+
+  const ext = extensionFromUri(uri);
+  const mime = mimeFromExtension(ext) ?? (ext === 'png' ? 'image/png' : null);
+  if (!mime) {
+    return {
+      dataUri: null,
+      unavailableReason: 'Image format not supported in PDF',
+    };
+  }
+
+  if (Platform.OS !== 'web') {
+    try {
+      if (!new File(uri).exists) {
+        return { dataUri: null, unavailableReason: unavailableLabel };
+      }
+    } catch {
+      return { dataUri: null, unavailableReason: unavailableLabel };
+    }
+  }
+
+  try {
+    const file = new File(uri);
+    const base64 = await file.base64();
+    if (!base64) {
+      return { dataUri: null, unavailableReason: `${unavailableLabel} (unreadable)` };
+    }
+    return { dataUri: `data:${mime};base64,${base64}` };
+  } catch {
+    return { dataUri: null, unavailableReason: `${unavailableLabel} (unreadable)` };
+  }
 }
 
 async function resolvePhotoForPdf(photo: ReportPhoto): Promise<ResolvedPhoto> {
@@ -238,14 +299,118 @@ function renderPhotoSection(title: string, photos: ResolvedPhoto[]): string {
     </section>`;
 }
 
-export function buildReportPdfHtml(
-  report: Report,
-  beforePhotos: ResolvedPhoto[],
-  afterPhotos: ResolvedPhoto[],
+function renderCompanyContactRows(profile: CompanyProfile | null): string {
+  if (!profile) {
+    return '';
+  }
+  const rows: string[] = [];
+  if (profile.email?.trim()) {
+    rows.push(
+      `<tr><td class="label">Email</td><td>${escapeHtml(profile.email.trim())}</td></tr>`,
+    );
+  }
+  if (profile.phone?.trim()) {
+    rows.push(
+      `<tr><td class="label">Phone</td><td>${escapeHtml(profile.phone.trim())}</td></tr>`,
+    );
+  }
+  if (profile.address?.trim()) {
+    rows.push(
+      `<tr><td class="label">Address</td><td>${formatMultiline(profile.address)}</td></tr>`,
+    );
+  }
+  if (profile.website?.trim()) {
+    rows.push(
+      `<tr><td class="label">Website</td><td>${escapeHtml(profile.website.trim())}</td></tr>`,
+    );
+  }
+  return rows.join('');
+}
+
+function renderSignatureSection(
+  signature: ReportSignature | undefined,
+  resolved: ResolvedImage | null,
 ): string {
+  const current = isSignatureCurrent(signature);
+
+  if (!signature || !current) {
+    const reason = signature?.needsReconfirmation
+      ? 'Signature on file needs reconfirmation after report edits.'
+      : signature?.uri && !signatureFileExists(signature.uri)
+        ? 'Signature image is missing from device storage.'
+        : 'This report has not been signed.';
+
+    return `
+      <section class="section keep-together signature-section">
+        <h2>Client signature</h2>
+        <div class="unsigned-box">
+          <p class="unsigned-title">Not signed</p>
+          <p class="muted">${escapeHtml(reason)}</p>
+          <p class="muted small">Signatures captured in FieldReport acknowledge the intervention report and are not qualified electronic signatures.</p>
+        </div>
+      </section>`;
+  }
+
+  const imageHtml = resolved?.dataUri
+    ? `<img class="signature-image" src="${resolved.dataUri}" alt="Client signature" />`
+    : `<div class="photo-placeholder">${escapeHtml(
+        resolved?.unavailableReason ?? 'Signature image unavailable',
+      )}</div>`;
+
+  return `
+    <section class="section keep-together signature-section">
+      <h2>Client signature</h2>
+      <div class="signature-box">
+        ${imageHtml}
+        <table class="meta signature-meta">
+          <tr>
+            <td class="label">Signer</td>
+            <td>${displayOrDash(signature.signerName)}</td>
+          </tr>
+          <tr>
+            <td class="label">Signed</td>
+            <td>${escapeHtml(formatDisplayDateTime(signature.signedAt))}</td>
+          </tr>
+          <tr>
+            <td class="label">Acknowledgement</td>
+            <td>${escapeHtml(signature.consentLabel)}</td>
+          </tr>
+        </table>
+        <p class="muted small">Captured as part of this intervention report — not a qualified electronic signature or legal certification.</p>
+      </div>
+    </section>`;
+}
+
+export type BuildReportPdfHtmlOptions = {
+  report: Report;
+  beforePhotos: ResolvedPhoto[];
+  afterPhotos: ResolvedPhoto[];
+  companyProfile: CompanyProfile | null;
+  logo: ResolvedImage | null;
+  signatureImage: ResolvedImage | null;
+};
+
+export function buildReportPdfHtml({
+  report,
+  beforePhotos,
+  afterPhotos,
+  companyProfile,
+  logo,
+  signatureImage,
+}: BuildReportPdfHtmlOptions): string {
+
   const client = escapeHtml(displayClientName(report.clientName));
   const contact = report.clientContact?.trim();
   const generatedAt = formatDisplayDate(new Date().toISOString().slice(0, 10));
+  const companyName = resolveCompanyDisplayName(companyProfile);
+  const branded = hasCompanyBrandingName(companyProfile);
+  const technician = companyProfile?.technicianName?.trim();
+
+  const logoHtml = logo?.dataUri
+    ? `<img class="company-logo" src="${logo.dataUri}" alt="Company logo" />`
+    : logo?.unavailableReason
+      ? `<p class="muted small">Logo unavailable</p>`
+      : '';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -274,6 +439,18 @@ export function buildReportPdfHtml(
       padding-bottom: 12px;
       margin-bottom: 18px;
     }
+    .brand-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 10px;
+    }
+    .company-logo {
+      max-width: 160px;
+      max-height: 56px;
+      object-fit: contain;
+    }
     .brand {
       color: ${Palette.primary};
       font-size: 11pt;
@@ -281,6 +458,12 @@ export function buildReportPdfHtml(
       letter-spacing: 0.08em;
       text-transform: uppercase;
       margin: 0 0 4px;
+    }
+    .company-name {
+      margin: 0;
+      font-size: 13pt;
+      font-weight: 700;
+      color: ${Palette.text};
     }
     h1 {
       margin: 0;
@@ -323,6 +506,7 @@ export function buildReportPdfHtml(
     }
     p { margin: 0 0 8px; }
     .muted { color: ${Palette.textMuted}; }
+    .small { font-size: 8.5pt; }
     table.checklist {
       width: 100%;
       border-collapse: collapse;
@@ -387,6 +571,31 @@ export function buildReportPdfHtml(
       border: 1px dashed ${Palette.border};
       font-size: 10pt;
     }
+    .signature-box, .unsigned-box {
+      border: 1px solid ${Palette.border};
+      border-radius: 6px;
+      padding: 12px;
+      background: #fafcfe;
+    }
+    .unsigned-box {
+      border-style: dashed;
+      background: ${Palette.primaryLight};
+    }
+    .unsigned-title {
+      font-weight: 700;
+      color: ${Palette.warning};
+      margin: 0 0 6px;
+    }
+    .signature-image {
+      display: block;
+      width: 100%;
+      max-height: 140px;
+      object-fit: contain;
+      background: #fff;
+      border: 1px solid ${Palette.border};
+      margin-bottom: 10px;
+    }
+    .signature-meta { margin-top: 0; }
     .keep-together {
       page-break-inside: avoid;
       break-inside: avoid;
@@ -406,7 +615,15 @@ export function buildReportPdfHtml(
 <body>
   <div class="sheet">
     <header class="header keep-together">
-      <p class="brand">FieldReport</p>
+      <div class="brand-row">
+        <div>
+          <p class="brand">FieldReport</p>
+          <p class="company-name">${escapeHtml(companyName)}${
+            branded ? '' : ' <span class="muted small">(default)</span>'
+          }</p>
+        </div>
+        ${logoHtml}
+      </div>
       <h1>Intervention report</h1>
       <p class="subtitle">${client} · ${displayOrDash(report.equipmentName)}</p>
       <table class="meta">
@@ -431,6 +648,12 @@ export function buildReportPdfHtml(
           <td class="label">Equipment</td>
           <td>${displayOrDash(report.equipmentName)}</td>
         </tr>
+        ${
+          technician
+            ? `<tr><td class="label">Technician</td><td>${escapeHtml(technician)}</td></tr>`
+            : ''
+        }
+        ${renderCompanyContactRows(companyProfile)}
         <tr>
           <td class="label">Problem</td>
           <td>${formatMultiline(report.problemDescription)}</td>
@@ -462,10 +685,11 @@ export function buildReportPdfHtml(
 
     ${renderPhotoSection('Before photos', beforePhotos)}
     ${renderPhotoSection('After photos', afterPhotos)}
+    ${renderSignatureSection(report.signature, signatureImage)}
 
     <footer class="footer keep-together">
       <span>Generated ${escapeHtml(generatedAt)} · FieldReport</span>
-      <span>Status: Completed</span>
+      <span>Status: Completed${isSignatureCurrent(report.signature) ? ' · Signed' : ' · Unsigned'}</span>
     </footer>
   </div>
 </body>
@@ -473,18 +697,35 @@ export function buildReportPdfHtml(
 }
 
 /**
- * Build a client-ready PDF from a persisted report snapshot.
- * Does not mutate or save the report.
+ * Build a client-ready PDF from a persisted report snapshot and the current
+ * company profile. Does not mutate or save the report.
  */
 export async function generateReportPdf(report: Report): Promise<GeneratedReportPdf> {
   assertCanExportReportPdf(report);
 
+  const companyProfile = await loadCompanyProfile();
   const photos = report.photos ?? [];
   const resolved = await Promise.all(photos.map((photo) => resolvePhotoForPdf(photo)));
   const beforePhotos = resolved.filter((item) => item.photo.category === 'before');
   const afterPhotos = resolved.filter((item) => item.photo.category === 'after');
 
-  const html = buildReportPdfHtml(report, beforePhotos, afterPhotos);
+  const [logo, signatureImage] = await Promise.all([
+    companyProfile?.logoUri
+      ? resolveLocalImageUri(companyProfile.logoUri, 'Logo file unavailable')
+      : Promise.resolve(null),
+    report.signature?.uri
+      ? resolveLocalImageUri(report.signature.uri, 'Signature file unavailable')
+      : Promise.resolve(null),
+  ]);
+
+  const html = buildReportPdfHtml({
+    report,
+    beforePhotos,
+    afterPhotos,
+    companyProfile,
+    logo,
+    signatureImage,
+  });
   const filename = buildReportPdfFilename(report);
 
   try {

@@ -1,6 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { ChecklistItem, Report, ReportPhoto, ReportStatus } from '@/types/report';
+import { signatureFileExists } from '@/services/signature-storage';
+import type {
+  ChecklistItem,
+  Report,
+  ReportPhoto,
+  ReportSignature,
+  ReportStatus,
+} from '@/types/report';
+import { computeReportContentDigest, reconcileSignatureWithContent } from '@/utils/report-helpers';
 
 const STORAGE_KEY = 'fieldreport.reports.v1';
 
@@ -33,6 +41,22 @@ function isReportPhoto(value: unknown): value is ReportPhoto {
   );
 }
 
+function isReportSignature(value: unknown): value is ReportSignature {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const signature = value as Record<string, unknown>;
+  return (
+    typeof signature.uri === 'string' &&
+    typeof signature.signedAt === 'string' &&
+    typeof signature.consentLabel === 'string' &&
+    typeof signature.contentDigest === 'string' &&
+    (signature.signerName === undefined || typeof signature.signerName === 'string') &&
+    (signature.needsReconfirmation === undefined ||
+      typeof signature.needsReconfirmation === 'boolean')
+  );
+}
+
 /**
  * Reliable evidence a legacy record was unfinished:
  * - explicit status draft / in_progress
@@ -57,6 +81,49 @@ function normalizePhotos(value: unknown): { photos: ReportPhoto[]; changed: bool
     caption: photo.caption?.trim() ? photo.caption.trim() : undefined,
   }));
   return { photos, changed: photos.length !== value.length };
+}
+
+function normalizeSignature(
+  value: unknown,
+  contentDigest: string,
+): { signature?: ReportSignature; changed: boolean } {
+  if (value === undefined || value === null) {
+    return { signature: undefined, changed: false };
+  }
+  if (!isReportSignature(value)) {
+    return { signature: undefined, changed: true };
+  }
+
+  let changed = false;
+  if (!signatureFileExists(value.uri)) {
+    return { signature: undefined, changed: true };
+  }
+
+  const signerName = value.signerName?.trim();
+  const reconciled = reconcileSignatureWithContent(
+    {
+      uri: value.uri,
+      signerName: signerName && signerName.length > 0 ? signerName : undefined,
+      signedAt: value.signedAt,
+      consentLabel: value.consentLabel.trim() || value.consentLabel,
+      contentDigest: value.contentDigest,
+      needsReconfirmation: value.needsReconfirmation,
+    },
+    contentDigest,
+  );
+
+  if (!reconciled) {
+    return { signature: undefined, changed: true };
+  }
+
+  if (
+    Boolean(reconciled.needsReconfirmation) !== Boolean(value.needsReconfirmation) ||
+    reconciled.signerName !== value.signerName
+  ) {
+    changed = true;
+  }
+
+  return { signature: reconciled, changed };
 }
 
 function normalizeReport(value: unknown): { report: Report; changed: boolean } | null {
@@ -88,6 +155,23 @@ function normalizeReport(value: unknown): { report: Report; changed: boolean } |
   const { photos, changed: photosChanged } = normalizePhotos(report.photos);
   const statusChanged = report.status !== status;
 
+  const contentDigest = computeReportContentDigest({
+    clientName: report.clientName,
+    clientContact: contact,
+    equipmentName: report.equipmentName,
+    interventionDate: report.interventionDate,
+    problemDescription: report.problemDescription,
+    checklist: report.checklist,
+    observations: report.observations,
+    identifiedIssues: report.identifiedIssues,
+    photos,
+  });
+
+  const { signature, changed: signatureChanged } = normalizeSignature(
+    report.signature,
+    contentDigest,
+  );
+
   return {
     report: {
       id: report.id,
@@ -103,8 +187,14 @@ function normalizeReport(value: unknown): { report: Report; changed: boolean } |
       observations: report.observations,
       identifiedIssues: [...report.identifiedIssues],
       photos: photos.map((photo) => ({ ...photo })),
+      signature,
     },
-    changed: statusChanged || photosChanged || !('photos' in report),
+    changed:
+      statusChanged ||
+      photosChanged ||
+      signatureChanged ||
+      !('photos' in report) ||
+      ('signature' in report && signature === undefined && report.signature != null),
   };
 }
 

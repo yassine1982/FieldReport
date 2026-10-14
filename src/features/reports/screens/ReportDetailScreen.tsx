@@ -1,5 +1,6 @@
 import { router } from 'expo-router';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
 import { Button } from '@/components/ui/Button';
@@ -10,9 +11,19 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useReports } from '@/context/ReportsContext';
 import { ReportPdfActions } from '@/features/reports/components/ReportPdfActions';
 import { ReportPhotosSection } from '@/features/reports/components/ReportPhotosSection';
+import { ReportSignatureSection } from '@/features/reports/components/ReportSignatureSection';
+import { SignatureCaptureModal } from '@/features/reports/components/SignatureCaptureModal';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { displayClientName, formatDisplayDate } from '@/utils/report-helpers';
+import { deleteSignatureFile } from '@/services/signature-storage';
+import type { Report, ReportSignature } from '@/types/report';
+import {
+  computeReportContentDigest,
+  displayClientName,
+  formatDisplayDate,
+  reconcileSignatureWithContent,
+  signatureUri,
+} from '@/utils/report-helpers';
 
 type ReportDetailScreenProps = {
   reportId: string;
@@ -33,8 +44,10 @@ function checklistStatusLabel(status: string): string {
 
 export function ReportDetailScreen({ reportId }: ReportDetailScreenProps) {
   const theme = useTheme();
-  const { getReport, loading } = useReports();
+  const { getReport, saveReport, loading } = useReports();
   const report = getReport(reportId);
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [savingSignature, setSavingSignature] = useState(false);
 
   if (loading && !report) {
     return (
@@ -62,9 +75,107 @@ export function ReportDetailScreen({ reportId }: ReportDetailScreenProps) {
   }
 
   const isDraft = report.status === 'draft';
+  const contentDigest = computeReportContentDigest(report);
+  const signature = reconcileSignatureWithContent(report.signature, contentDigest);
   const editHref = {
     pathname: '/report/new' as const,
     params: { id: report.id },
+  };
+
+  const persistSignatureUpdate = async (
+    nextSignature: ReportSignature | undefined,
+    successTitle: string,
+    successMessage: string,
+  ) => {
+    setSavingSignature(true);
+    try {
+      const updated: Report = {
+        ...report,
+        updatedAt: new Date().toISOString(),
+        signature: nextSignature
+          ? reconcileSignatureWithContent(nextSignature, contentDigest)
+          : undefined,
+      };
+      await saveReport(updated);
+      Alert.alert(successTitle, successMessage);
+    } catch {
+      Alert.alert('Save failed', 'Could not update the signature on this report.');
+    } finally {
+      setSavingSignature(false);
+    }
+  };
+
+  const requestSignatureSave = (signature: ReportSignature) => {
+    const previousUri = signatureUri(report.signature);
+    Alert.alert(
+      'Save signature?',
+      'This updates the existing report on this device. No duplicate report will be created.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => {
+            if (signature.uri && signature.uri !== previousUri) {
+              void deleteSignatureFile(signature.uri);
+            }
+          },
+        },
+        {
+          text: 'Save',
+          onPress: () => {
+            void persistSignatureUpdate(
+              signature,
+              'Signature saved',
+              'The client signature is now part of this intervention report.',
+            );
+          },
+        },
+      ],
+    );
+  };
+
+  const requestConfirmSignature = () => {
+    if (!signature) {
+      return;
+    }
+    Alert.alert(
+      'Confirm signature?',
+      'Confirm that the existing signature still applies to the updated report content.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          onPress: () => {
+            void persistSignatureUpdate(
+              {
+                ...signature,
+                contentDigest,
+                needsReconfirmation: false,
+              },
+              'Signature confirmed',
+              'The signature is marked current for this report content.',
+            );
+          },
+        },
+      ],
+    );
+  };
+
+  const requestClearSignature = () => {
+    Alert.alert('Remove signature?', 'The signature will be removed from this saved report.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          void persistSignatureUpdate(
+            undefined,
+            'Signature removed',
+            'This report is no longer marked as signed.',
+          );
+        },
+      },
+    ]);
   };
 
   return (
@@ -159,10 +270,29 @@ export function ReportDetailScreen({ reportId }: ReportDetailScreenProps) {
 
       <ReportPhotosSection photos={report.photos ?? []} />
 
+      <ReportSignatureSection
+        signature={signature}
+        busy={savingSignature}
+        onCapture={() => setCaptureOpen(true)}
+        onConfirmCurrent={requestConfirmSignature}
+        onClear={requestClearSignature}
+      />
+
       <AppText variant="caption" color="textMuted">
         Created {formatDisplayDate(report.createdAt.slice(0, 10))} · Updated{' '}
         {formatDisplayDate(report.updatedAt.slice(0, 10))}
       </AppText>
+
+      <SignatureCaptureModal
+        visible={captureOpen}
+        contentDigest={contentDigest}
+        initialSignerName={signature?.signerName ?? report.clientName}
+        onCancel={() => setCaptureOpen(false)}
+        onConfirm={(signature) => {
+          setCaptureOpen(false);
+          requestSignatureSave(signature);
+        }}
+      />
     </Screen>
   );
 }

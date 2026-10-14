@@ -2,7 +2,7 @@
 
 Mobile app for independent maintenance technicians to create professional intervention reports — clients, equipment, checklists, photos, signatures, and PDF export.
 
-**Current milestone:** Local report drafts/editing, before/after photo evidence, and client-ready PDF preview/share — all on-device. Auth, Supabase, payments, and signatures are intentionally not included yet.
+**Current milestone:** Local company branding, client signature capture, and branded PDF export — all on-device. Auth, Supabase, and payments are intentionally not included yet.
 
 ## Stack
 
@@ -47,20 +47,32 @@ src/
     report/[id].tsx    # Report detail
   components/ui/       # Button, Card, Input, Screen, AppText, EmptyState, StatusBadge
   context/             # ReportsProvider (live list + save)
-  services/            # AsyncStorage, photo files, PDF generation
+  services/            # AsyncStorage, photos, signatures, company profile, PDF
   features/
     home/              # Dashboard cards + recent reports from saved data
-    reports/           # Wizard steps, list, detail, PDF actions
-    clients|settings/  # Placeholders
-  types/report.ts      # Report, checklist, draft types
-  utils/               # IDs, stats, date helpers
+    reports/           # Wizard steps, list, detail, signature, PDF actions
+    settings/          # Local company branding profile
+    clients/           # Placeholder
+  types/               # Report + company types
+  utils/               # IDs, stats, content digests, date helpers
 ```
 
 Path alias: `@/*` → `src/*`
 
-Local reports are stored with `@react-native-async-storage/async-storage` under key `fieldreport.reports.v1`.
+### Local storage
 
-Photo evidence files live under the app document directory (`report-photos/`). Generated PDFs are written to `report-pdfs/` in the same document directory (not AsyncStorage).
+| Data | Location |
+| --- | --- |
+| Report metadata | AsyncStorage `fieldreport.reports.v1` |
+| Company profile | AsyncStorage `fieldreport.company.v1` |
+| Evidence photos | Document dir `report-photos/` |
+| Signature PNGs | Document dir `report-signatures/` |
+| Company logo | Document dir `company-assets/` |
+| Generated PDFs | Document dir `report-pdfs/` |
+
+Large image bytes are never stored in AsyncStorage — only file URIs and metadata.
+
+Report migration remains in-place on `fieldreport.reports.v1`: missing `photos` / invalid entries are normalized; optional `signature` metadata is validated and reconciled against a content digest. Missing signature files are dropped.
 
 ## Design system
 
@@ -77,8 +89,8 @@ Professional blue / white palette with reusable tokens:
 1. Home + design system
 2. Local report creation + draft lifecycle
 3. Photos & evidence
-4. PDF export / sharing *(this milestone)*
-5. Client signature
+4. PDF export / sharing
+5. Client signature + company branding *(this milestone)*
 6. Auth, sync, Free/Pro limits
 
 ## License

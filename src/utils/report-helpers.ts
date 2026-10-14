@@ -1,7 +1,9 @@
+import { cloneSignature } from '@/services/signature-storage';
 import type {
   NewReportDraft,
   Report,
   ReportPhoto,
+  ReportSignature,
   ReportStats,
   ReportStatus,
   ReportSummary,
@@ -36,6 +38,7 @@ export function toReportSummary(report: Report): ReportSummary {
     updatedAt: report.updatedAt,
     problemPreview: preview.length > 80 ? `${preview.slice(0, 77)}…` : preview,
     photoCount: report.photos.length,
+    isSigned: Boolean(report.signature?.uri) && !report.signature?.needsReconfirmation,
   };
 }
 
@@ -66,11 +69,107 @@ export function formatDisplayDate(isoDate: string): string {
   });
 }
 
+export function formatDisplayDateTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function clonePhotos(photos: ReportPhoto[]): ReportPhoto[] {
   return photos.map((photo) => ({
     ...photo,
     caption: photo.caption,
   }));
+}
+
+/** Stable digest of report fields that affect signature validity (excludes signature + timestamps). */
+export function computeReportContentDigest(
+  data: Pick<
+    Report,
+    | 'clientName'
+    | 'clientContact'
+    | 'equipmentName'
+    | 'interventionDate'
+    | 'problemDescription'
+    | 'checklist'
+    | 'observations'
+    | 'identifiedIssues'
+    | 'photos'
+  >,
+): string {
+  const payload = {
+    clientName: data.clientName.trim(),
+    clientContact: data.clientContact?.trim() ?? '',
+    equipmentName: data.equipmentName.trim(),
+    interventionDate: data.interventionDate.trim(),
+    problemDescription: data.problemDescription.trim(),
+    checklist: data.checklist.map((item) => ({
+      id: item.id,
+      label: item.label,
+      status: item.status,
+    })),
+    observations: data.observations.trim(),
+    identifiedIssues: data.identifiedIssues.map((issue) => issue.trim()).filter(Boolean),
+    photos: data.photos.map((photo) => ({
+      id: photo.id,
+      uri: photo.uri,
+      category: photo.category,
+      caption: photo.caption?.trim() ?? '',
+    })),
+  };
+
+  const json = JSON.stringify(payload);
+  let hash = 2166136261;
+  for (let i = 0; i < json.length; i += 1) {
+    hash ^= json.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `fnv1a_${(hash >>> 0).toString(16)}`;
+}
+
+export function computeDraftContentDigest(draft: NewReportDraft): string {
+  return computeReportContentDigest({
+    clientName: draft.clientName,
+    clientContact: draft.clientContact,
+    equipmentName: draft.equipmentName,
+    interventionDate: draft.interventionDate,
+    problemDescription: draft.problemDescription,
+    checklist: draft.checklist,
+    observations: draft.observations,
+    identifiedIssues: draft.identifiedIssues,
+    photos: draft.photos,
+  });
+}
+
+/**
+ * Align signature integrity with current content:
+ * matching digest → current; mismatch → needs reconfirmation.
+ */
+export function reconcileSignatureWithContent(
+  signature: ReportSignature | undefined,
+  contentDigest: string,
+): ReportSignature | undefined {
+  if (!signature) {
+    return undefined;
+  }
+  if (signature.contentDigest === contentDigest) {
+    return {
+      ...signature,
+      needsReconfirmation: false,
+    };
+  }
+  return {
+    ...signature,
+    needsReconfirmation: true,
+  };
 }
 
 export function reportToDraft(report: Report): NewReportDraft {
@@ -84,23 +183,26 @@ export function reportToDraft(report: Report): NewReportDraft {
     observations: report.observations,
     identifiedIssues: [...report.identifiedIssues],
     photos: clonePhotos(report.photos ?? []),
+    signature: cloneSignature(report.signature),
   };
 }
 
 export type BuildReportOptions = {
   status: ReportStatus;
   existing?: Pick<Report, 'id' | 'createdAt'>;
+  /** When set, overrides draft.signature after content reconciliation */
+  signature?: ReportSignature | null;
 };
 
 export function buildReport(draft: NewReportDraft, options: BuildReportOptions): Report {
   const now = new Date().toISOString();
   const contact = draft.clientContact.trim();
+  const photos = draft.photos.map((photo) => ({
+    ...photo,
+    caption: photo.caption?.trim() ? photo.caption.trim() : undefined,
+  }));
 
-  return {
-    id: options.existing?.id ?? createReportId(),
-    createdAt: options.existing?.createdAt ?? now,
-    updatedAt: now,
-    status: options.status,
+  const contentBase = {
     clientName: draft.clientName.trim(),
     clientContact: contact.length > 0 ? contact : undefined,
     equipmentName: draft.equipmentName.trim(),
@@ -111,10 +213,25 @@ export function buildReport(draft: NewReportDraft, options: BuildReportOptions):
     identifiedIssues: draft.identifiedIssues
       .map((issue) => issue.trim())
       .filter((issue) => issue.length > 0),
-    photos: draft.photos.map((photo) => ({
-      ...photo,
-      caption: photo.caption?.trim() ? photo.caption.trim() : undefined,
-    })),
+    photos,
+  };
+
+  const digest = computeReportContentDigest(contentBase);
+  const incoming =
+    options.signature === null
+      ? undefined
+      : options.signature !== undefined
+        ? options.signature
+        : draft.signature;
+  const signature = reconcileSignatureWithContent(incoming, digest);
+
+  return {
+    id: options.existing?.id ?? createReportId(),
+    createdAt: options.existing?.createdAt ?? now,
+    updatedAt: now,
+    status: options.status,
+    ...contentBase,
+    signature,
   };
 }
 
@@ -143,6 +260,16 @@ export function serializeDraft(draft: NewReportDraft): string {
       caption: photo.caption ?? '',
       createdAt: photo.createdAt,
     })),
+    signature: draft.signature
+      ? {
+          uri: draft.signature.uri,
+          signerName: draft.signature.signerName ?? '',
+          signedAt: draft.signature.signedAt,
+          consentLabel: draft.signature.consentLabel,
+          contentDigest: draft.signature.contentDigest,
+          needsReconfirmation: Boolean(draft.signature.needsReconfirmation),
+        }
+      : null,
   });
 }
 
@@ -152,4 +279,8 @@ export function isDraftDirty(current: NewReportDraft, baseline: string): boolean
 
 export function photoUris(photos: ReportPhoto[]): string[] {
   return photos.map((photo) => photo.uri).filter(Boolean);
+}
+
+export function signatureUri(signature: ReportSignature | undefined): string | undefined {
+  return signature?.uri || undefined;
 }

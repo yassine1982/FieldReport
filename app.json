@@ -36,7 +36,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "FieldReport needs photo library access to attach before/after evidence to intervention reports.",
+          "photosPermission": "FieldReport needs photo library access to attach evidence photos and choose a company logo.",
           "cameraPermission": "FieldReport needs camera access to capture before/after evidence for intervention reports.",
           "microphonePermission": false
         }

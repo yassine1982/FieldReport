@@ -61,7 +61,8 @@ export function ReportPdfActions({ report }: ReportPdfActionsProps) {
       </AppText>
       {canExport ? (
         <AppText variant="caption" color="textSecondary">
-          Generate a printable A4 report from the saved data on this device.
+          Generate a printable A4 report from the saved data and current company profile on this
+          device. Branding is configured in Settings.
         </AppText>
       ) : (
         <AppText variant="caption" color="warning">

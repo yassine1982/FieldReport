@@ -37,13 +37,20 @@ import {
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { deletePhotoFiles } from '@/services/photo-storage';
-import type { ChecklistItemStatus, NewReportDraft, Report } from '@/types/report';
+import { deleteSignatureFiles } from '@/services/signature-storage';
+import type {
+  ChecklistItemStatus,
+  NewReportDraft,
+  Report,
+  ReportSignature,
+} from '@/types/report';
 import {
   buildReport,
   isDraftDirty,
   photoUris,
   reportToDraft,
   serializeDraft,
+  signatureUri,
   todayIsoDate,
 } from '@/utils/report-helpers';
 
@@ -60,6 +67,7 @@ function createInitialDraft(): NewReportDraft {
     observations: '',
     identifiedIssues: [],
     photos: [],
+    signature: undefined,
   };
 }
 
@@ -100,17 +108,28 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
   const sessionPersistedUrisRef = useRef<Set<string>>(new Set());
   /** Photo URIs that belong to the last successfully saved version of this report. */
   const committedUrisRef = useRef<Set<string>>(new Set(photoUris(seedDraft.photos)));
+  /** Signature URIs captured this session before an explicit save. */
+  const sessionSignatureUrisRef = useRef<Set<string>>(new Set());
+  const committedSignatureUriRef = useRef<string | undefined>(signatureUri(seedDraft.signature));
 
   const dirty = isDraftDirty(draft, baseline);
 
-  const cleanupOrphanSessionPhotos = useCallback(async () => {
-    const orphans = [...sessionPersistedUrisRef.current].filter(
+  const cleanupOrphanSessionMedia = useCallback(async () => {
+    const orphanPhotos = [...sessionPersistedUrisRef.current].filter(
       (uri) => !committedUrisRef.current.has(uri),
     );
-    if (orphans.length > 0) {
-      await deletePhotoFiles(orphans);
+    if (orphanPhotos.length > 0) {
+      await deletePhotoFiles(orphanPhotos);
     }
     sessionPersistedUrisRef.current.clear();
+
+    const orphanSignatures = [...sessionSignatureUrisRef.current].filter(
+      (uri) => uri !== committedSignatureUriRef.current,
+    );
+    if (orphanSignatures.length > 0) {
+      await deleteSignatureFiles(orphanSignatures);
+    }
+    sessionSignatureUrisRef.current.clear();
   }, []);
 
   useEffect(() => {
@@ -121,7 +140,7 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
           return;
         }
         if (!dirty) {
-          void cleanupOrphanSessionPhotos();
+          void cleanupOrphanSessionMedia();
         }
         return;
       }
@@ -135,7 +154,7 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
           style: 'destructive',
           onPress: () => {
             void (async () => {
-              await cleanupOrphanSessionPhotos();
+              await cleanupOrphanSessionMedia();
               allowLeaveRef.current = true;
               navigation.dispatch(event.data.action);
             })();
@@ -145,7 +164,7 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
     });
 
     return unsubscribe;
-  }, [navigation, dirty, cleanupOrphanSessionPhotos]);
+  }, [navigation, dirty, cleanupOrphanSessionMedia]);
 
   const leaveWizard = useCallback(
     (href?: Href) => {
@@ -202,7 +221,7 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
 
   const requestLeave = () => {
     if (!dirty) {
-      void cleanupOrphanSessionPhotos().then(() => leaveWizard());
+      void cleanupOrphanSessionMedia().then(() => leaveWizard());
       return;
     }
     if (navigation.canGoBack()) {
@@ -215,10 +234,32 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
         text: 'Discard',
         style: 'destructive',
         onPress: () => {
-          void cleanupOrphanSessionPhotos().then(() => leaveWizard('/reports'));
+          void cleanupOrphanSessionMedia().then(() => leaveWizard('/reports'));
         },
       },
     ]);
+  };
+
+  const handleSignatureChange = (signature: ReportSignature | undefined) => {
+    const previousUri = signatureUri(draft.signature);
+    const nextUri = signatureUri(signature);
+
+    if (
+      previousUri &&
+      previousUri !== nextUri &&
+      previousUri !== committedSignatureUriRef.current &&
+      sessionSignatureUrisRef.current.has(previousUri)
+    ) {
+      // Previous was a session-only signature — safe to delete immediately if replaced/removed.
+      void deleteSignatureFiles([previousUri]);
+      sessionSignatureUrisRef.current.delete(previousUri);
+    }
+
+    if (nextUri && nextUri !== committedSignatureUriRef.current) {
+      sessionSignatureUrisRef.current.add(nextUri);
+    }
+
+    updateDraft('signature', signature);
   };
 
   const goNext = () => {
@@ -274,6 +315,8 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
     setBaseline(serializeDraft(draft));
     committedUrisRef.current = new Set(photoUris(draft.photos));
     sessionPersistedUrisRef.current.clear();
+    committedSignatureUriRef.current = signatureUri(draft.signature);
+    sessionSignatureUrisRef.current.clear();
     return saved;
   };
 
@@ -477,7 +520,9 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
           />
         ) : null}
 
-        {step === 5 ? <ReviewStep draft={draft} /> : null}
+        {step === 5 ? (
+          <ReviewStep draft={draft} onChangeSignature={handleSignatureChange} />
+        ) : null}
 
         <WizardFooter
           onBack={step > 1 ? goBack : undefined}

@@ -19,6 +19,23 @@ export type ReportPhoto = {
   createdAt: string;
 };
 
+/**
+ * Client acknowledgement captured for an intervention report.
+ * Image bytes live on disk; AsyncStorage only stores this metadata.
+ */
+export type ReportSignature = {
+  /** Persistent local PNG URI under the app document directory */
+  uri: string;
+  signerName?: string;
+  signedAt: string;
+  /** Plain-language acknowledgement shown at capture time */
+  consentLabel: string;
+  /** Digest of report content at the time of signing / last confirmation */
+  contentDigest: string;
+  /** True when report content changed after the signature was last confirmed */
+  needsReconfirmation?: boolean;
+};
+
 export type Report = {
   id: string;
   createdAt: string;
@@ -34,6 +51,7 @@ export type Report = {
   observations: string;
   identifiedIssues: string[];
   photos: ReportPhoto[];
+  signature?: ReportSignature;
 };
 
 /** Lightweight list row derived from a full Report */
@@ -47,6 +65,7 @@ export type ReportSummary = {
   updatedAt: string;
   problemPreview: string;
   photoCount: number;
+  isSigned: boolean;
 };
 
 export type ReportStats = {
@@ -65,4 +84,5 @@ export type NewReportDraft = {
   observations: string;
   identifiedIssues: string[];
   photos: ReportPhoto[];
+  signature?: ReportSignature;
 };

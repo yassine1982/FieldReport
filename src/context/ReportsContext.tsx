@@ -10,10 +10,12 @@ import {
 
 import { deleteUnreferencedPhotoFiles } from '@/services/photo-storage';
 import { loadReports, upsertReport } from '@/services/reports-storage';
+import { deleteUnreferencedSignatureFiles } from '@/services/signature-storage';
 import type { Report, ReportStats, ReportSummary } from '@/types/report';
 import {
   getReportStats,
   photoUris,
+  signatureUri,
   sortReportsNewestFirst,
   toReportSummary,
 } from '@/utils/report-helpers';
@@ -85,11 +87,18 @@ export function ReportsProvider({ children }: { children: ReactNode }) {
       const previous = reports.find((item) => item.id === report.id);
       const next = await upsertReport(report);
       if (previous) {
-        const removedUris = photoUris(previous.photos ?? []).filter(
+        const removedPhotoUris = photoUris(previous.photos ?? []).filter(
           (uri) => !photoUris(report.photos ?? []).includes(uri),
         );
+        const previousSignature = signatureUri(previous.signature);
+        const nextSignature = signatureUri(report.signature);
+        const removedSignatureUris =
+          previousSignature && previousSignature !== nextSignature
+            ? [previousSignature]
+            : [];
         try {
-          await deleteUnreferencedPhotoFiles(removedUris, next);
+          await deleteUnreferencedPhotoFiles(removedPhotoUris, next);
+          await deleteUnreferencedSignatureFiles(removedSignatureUris, next);
         } catch {
           // Metadata save already succeeded; orphan cleanup is best-effort.
         }

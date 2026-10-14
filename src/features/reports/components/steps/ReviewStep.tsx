@@ -1,14 +1,22 @@
 import { Image } from 'expo-image';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
 import { Radii, Spacing } from '@/constants/theme';
-import type { NewReportDraft, ReportPhoto } from '@/types/report';
-import { formatDisplayDate } from '@/utils/report-helpers';
+import { ReportSignatureSection } from '@/features/reports/components/ReportSignatureSection';
+import { SignatureCaptureModal } from '@/features/reports/components/SignatureCaptureModal';
+import type { NewReportDraft, ReportPhoto, ReportSignature } from '@/types/report';
+import {
+  computeDraftContentDigest,
+  formatDisplayDate,
+  reconcileSignatureWithContent,
+} from '@/utils/report-helpers';
 
 type ReviewStepProps = {
   draft: NewReportDraft;
+  onChangeSignature: (signature: ReportSignature | undefined) => void;
 };
 
 function ChecklistSummary({ draft }: { draft: NewReportDraft }) {
@@ -22,7 +30,11 @@ function ChecklistSummary({ draft }: { draft: NewReportDraft }) {
   );
 }
 
-export function ReviewStep({ draft }: ReviewStepProps) {
+export function ReviewStep({ draft, onChangeSignature }: ReviewStepProps) {
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const contentDigest = computeDraftContentDigest(draft);
+  const signature = reconcileSignatureWithContent(draft.signature, contentDigest);
+
   return (
     <View style={styles.stack}>
       <Card style={styles.section}>
@@ -112,6 +124,34 @@ export function ReviewStep({ draft }: ReviewStepProps) {
           </View>
         ) : null}
       </Card>
+
+      <ReportSignatureSection
+        signature={signature}
+        deferredSaveHint
+        onCapture={() => setCaptureOpen(true)}
+        onConfirmCurrent={() => {
+          if (!signature) {
+            return;
+          }
+          onChangeSignature({
+            ...signature,
+            contentDigest,
+            needsReconfirmation: false,
+          });
+        }}
+        onClear={() => onChangeSignature(undefined)}
+      />
+
+      <SignatureCaptureModal
+        visible={captureOpen}
+        contentDigest={contentDigest}
+        initialSignerName={signature?.signerName ?? draft.clientName}
+        onCancel={() => setCaptureOpen(false)}
+        onConfirm={(signature) => {
+          onChangeSignature(signature);
+          setCaptureOpen(false);
+        }}
+      />
     </View>
   );
 }
