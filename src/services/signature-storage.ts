@@ -1,10 +1,11 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import { Platform } from 'react-native';
 
+import { withStorageOperation } from '@/services/storage-operation';
 import { DEFAULT_SIGNATURE_CONSENT_LABEL } from '@/types/company';
 import type { Report, ReportSignature } from '@/types/report';
 
-const SIGNATURES_DIR_NAME = 'report-signatures';
+export const SIGNATURES_DIR_NAME = 'report-signatures';
 
 export function createSignatureId(): string {
   const random = Math.random().toString(36).slice(2, 10);
@@ -45,22 +46,24 @@ export async function persistSignatureFromUri(sourceUri: string): Promise<string
     return sourceUri;
   }
 
-  const dir = ensureSignaturesDirectory();
-  const filename = `${createSignatureId()}.png`;
-  const destination = new File(dir, filename);
-  const source = new File(sourceUri);
+  return withStorageOperation(async () => {
+    const dir = ensureSignaturesDirectory();
+    const filename = `${createSignatureId()}.png`;
+    const destination = new File(dir, filename);
+    const source = new File(sourceUri);
 
-  if (!source.exists) {
-    throw new Error('Signature image is no longer available.');
-  }
+    if (!source.exists) {
+      throw new Error('Signature image is no longer available.');
+    }
 
-  await source.copy(destination);
+    await source.copy(destination);
 
-  if (!destination.exists) {
-    throw new Error('Could not store the signature on this device.');
-  }
+    if (!destination.exists) {
+      throw new Error('Could not store the signature on this device.');
+    }
 
-  return destination.uri;
+    return destination.uri;
+  });
 }
 
 /**
@@ -71,21 +74,23 @@ export async function persistSignatureFromBase64(base64: string): Promise<string
     return `data:image/png;base64,${base64}`;
   }
 
-  const cleaned = base64.includes(',') ? (base64.split(',').pop() ?? base64) : base64;
-  if (!cleaned.trim()) {
-    throw new Error('Signature image data was empty.');
-  }
+  return withStorageOperation(async () => {
+    const cleaned = base64.includes(',') ? (base64.split(',').pop() ?? base64) : base64;
+    if (!cleaned.trim()) {
+      throw new Error('Signature image data was empty.');
+    }
 
-  const dir = ensureSignaturesDirectory();
-  const destination = new File(dir, `${createSignatureId()}.png`);
-  destination.create({ intermediates: true, overwrite: true });
-  destination.write(cleaned, { encoding: 'base64' });
+    const dir = ensureSignaturesDirectory();
+    const destination = new File(dir, `${createSignatureId()}.png`);
+    destination.create({ intermediates: true, overwrite: true });
+    destination.write(cleaned, { encoding: 'base64' });
 
-  if (!destination.exists) {
-    throw new Error('Could not store the signature on this device.');
-  }
+    if (!destination.exists) {
+      throw new Error('Could not store the signature on this device.');
+    }
 
-  return destination.uri;
+    return destination.uri;
+  });
 }
 
 export async function deleteSignatureFile(uri: string | undefined): Promise<void> {
@@ -149,6 +154,20 @@ export function buildReportSignature(options: {
     contentDigest: options.contentDigest,
     needsReconfirmation: false,
   };
+}
+
+/**
+ * URI of a newly captured signature that should be deleted because it was
+ * never committed onto the report. The committed file is left in place.
+ */
+export function signatureUriToDiscard(
+  candidateUri: string | undefined,
+  committedUri: string | undefined,
+): string | undefined {
+  if (!candidateUri || candidateUri === committedUri) {
+    return undefined;
+  }
+  return candidateUri;
 }
 
 export function isSignatureCurrent(signature: ReportSignature | undefined): boolean {

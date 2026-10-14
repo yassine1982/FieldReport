@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
@@ -19,6 +19,7 @@ import {
   deleteLogoFile,
   hasCompanyBrandingName,
   loadCompanyProfile,
+  logoUriToDiscardOnLeave,
   persistLogoFromUri,
   profileToInput,
   upsertCompanyProfile,
@@ -35,6 +36,25 @@ export function SettingsScreen() {
   const [input, setInput] = useState<CompanyProfileInput>(EMPTY_COMPANY_PROFILE_INPUT);
   const [errors, setErrors] = useState<CompanyProfileErrors>({});
   const [sessionLogoUri, setSessionLogoUri] = useState<string | undefined>();
+  const sessionLogoUriRef = useRef<string | undefined>(undefined);
+  const savedLogoUriRef = useRef<string | undefined>(undefined);
+  const saveInFlightRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      const pending = logoUriToDiscardOnLeave({
+        sessionLogoUri: sessionLogoUriRef.current,
+        savedLogoUri: savedLogoUriRef.current,
+        saveInFlight: saveInFlightRef.current,
+      });
+      if (pending) {
+        void deleteLogoFile(pending);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,6 +65,8 @@ export function SettingsScreen() {
         if (cancelled) {
           return;
         }
+        savedLogoUriRef.current = profile?.logoUri;
+        sessionLogoUriRef.current = undefined;
         setSavedProfile(profile);
         setInput(profileToInput(profile));
         setSessionLogoUri(undefined);
@@ -96,8 +118,14 @@ export function SettingsScreen() {
       }
 
       const persistentUri = await persistLogoFromUri(result.assets[0].uri);
-      if (sessionLogoUri && sessionLogoUri !== persistentUri) {
-        void deleteLogoFile(sessionLogoUri);
+      const previousPending = logoUriToDiscardOnLeave({
+        sessionLogoUri: sessionLogoUriRef.current,
+        savedLogoUri: savedLogoUriRef.current,
+        saveInFlight: false,
+      });
+      sessionLogoUriRef.current = persistentUri;
+      if (previousPending && previousPending !== persistentUri) {
+        void deleteLogoFile(previousPending);
       }
       setSessionLogoUri(persistentUri);
       updateField('logoUri', persistentUri);
@@ -114,9 +142,15 @@ export function SettingsScreen() {
   };
 
   const handleRemoveLogo = () => {
-    if (sessionLogoUri) {
-      void deleteLogoFile(sessionLogoUri);
+    const pending = logoUriToDiscardOnLeave({
+      sessionLogoUri: sessionLogoUriRef.current,
+      savedLogoUri: savedLogoUriRef.current,
+      saveInFlight: false,
+    });
+    if (pending) {
+      void deleteLogoFile(pending);
     }
+    sessionLogoUriRef.current = undefined;
     updateField('logoUri', undefined);
     setSessionLogoUri(undefined);
   };
@@ -128,9 +162,12 @@ export function SettingsScreen() {
       return;
     }
 
+    saveInFlightRef.current = true;
     setSaving(true);
     try {
       const profile = await upsertCompanyProfile(input, savedProfile);
+      savedLogoUriRef.current = profile.logoUri;
+      sessionLogoUriRef.current = undefined;
       setSavedProfile(profile);
       setInput(profileToInput(profile));
       setSessionLogoUri(undefined);
@@ -141,8 +178,20 @@ export function SettingsScreen() {
           : 'Saved. Add a company name for full PDF branding (a fallback name is used until then).',
       );
     } catch {
+      if (!mountedRef.current) {
+        const pending = logoUriToDiscardOnLeave({
+          sessionLogoUri: sessionLogoUriRef.current,
+          savedLogoUri: savedLogoUriRef.current,
+          saveInFlight: false,
+        });
+        if (pending) {
+          void deleteLogoFile(pending);
+        }
+        sessionLogoUriRef.current = undefined;
+      }
       Alert.alert('Save failed', 'Could not save company settings. Please try again.');
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
     }
   };

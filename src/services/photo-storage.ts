@@ -1,11 +1,12 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import { Platform } from 'react-native';
 
+import { withStorageOperation } from '@/services/storage-operation';
 import type { PhotoCategory, Report, ReportPhoto } from '@/types/report';
 
 export const MAX_PHOTOS_PER_REPORT = 10;
 
-const PHOTOS_DIR_NAME = 'report-photos';
+export const PHOTOS_DIR_NAME = 'report-photos';
 
 export function createPhotoId(): string {
   const random = Math.random().toString(36).slice(2, 10);
@@ -46,22 +47,24 @@ export async function persistPhotoFromUri(sourceUri: string): Promise<string> {
     return sourceUri;
   }
 
-  const dir = ensurePhotosDirectory();
-  const filename = `${createPhotoId()}.${extensionFromUri(sourceUri)}`;
-  const destination = new File(dir, filename);
-  const source = new File(sourceUri);
+  return withStorageOperation(async () => {
+    const dir = ensurePhotosDirectory();
+    const filename = `${createPhotoId()}.${extensionFromUri(sourceUri)}`;
+    const destination = new File(dir, filename);
+    const source = new File(sourceUri);
 
-  if (!source.exists) {
-    throw new Error('Selected photo is no longer available.');
-  }
+    if (!source.exists) {
+      throw new Error('Selected photo is no longer available.');
+    }
 
-  await source.copy(destination);
+    await source.copy(destination);
 
-  if (!destination.exists) {
-    throw new Error('Could not store the photo on this device.');
-  }
+    if (!destination.exists) {
+      throw new Error('Could not store the photo on this device.');
+    }
 
-  return destination.uri;
+    return destination.uri;
+  });
 }
 
 export async function deletePhotoFile(uri: string): Promise<void> {

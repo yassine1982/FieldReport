@@ -327,6 +327,16 @@ function renderCompanyContactRows(profile: CompanyProfile | null): string {
   return rows.join('');
 }
 
+function unsignedSignatureReason(signature: ReportSignature | undefined): string {
+  if (signature?.uri && !signatureFileExists(signature.uri)) {
+    return 'Signature image is missing from device storage.';
+  }
+  if (signature?.needsReconfirmation) {
+    return 'Signature on file needs reconfirmation after report edits.';
+  }
+  return 'This report has not been signed.';
+}
+
 function renderSignatureSection(
   signature: ReportSignature | undefined,
   resolved: ResolvedImage | null,
@@ -334,11 +344,7 @@ function renderSignatureSection(
   const current = isSignatureCurrent(signature);
 
   if (!signature || !current) {
-    const reason = signature?.needsReconfirmation
-      ? 'Signature on file needs reconfirmation after report edits.'
-      : signature?.uri && !signatureFileExists(signature.uri)
-        ? 'Signature image is missing from device storage.'
-        : 'This report has not been signed.';
+    const reason = unsignedSignatureReason(signature);
 
     return `
       <section class="section keep-together signature-section">

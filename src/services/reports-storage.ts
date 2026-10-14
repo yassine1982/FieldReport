@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { signatureFileExists } from '@/services/signature-storage';
+import { withStorageOperation } from '@/services/storage-operation';
 import type {
   ChecklistItem,
   Report,
@@ -10,7 +11,7 @@ import type {
 } from '@/types/report';
 import { computeReportContentDigest, reconcileSignatureWithContent } from '@/utils/report-helpers';
 
-const STORAGE_KEY = 'fieldreport.reports.v1';
+export const REPORTS_STORAGE_KEY = 'fieldreport.reports.v1';
 
 function isChecklistItem(value: unknown): value is ChecklistItem {
   if (typeof value !== 'object' || value === null) {
@@ -41,16 +42,20 @@ function isReportPhoto(value: unknown): value is ReportPhoto {
   );
 }
 
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 function isReportSignature(value: unknown): value is ReportSignature {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
   const signature = value as Record<string, unknown>;
   return (
-    typeof signature.uri === 'string' &&
-    typeof signature.signedAt === 'string' &&
-    typeof signature.consentLabel === 'string' &&
-    typeof signature.contentDigest === 'string' &&
+    nonEmptyString(signature.uri) &&
+    nonEmptyString(signature.signedAt) &&
+    nonEmptyString(signature.consentLabel) &&
+    nonEmptyString(signature.contentDigest) &&
     (signature.signerName === undefined || typeof signature.signerName === 'string') &&
     (signature.needsReconfirmation === undefined ||
       typeof signature.needsReconfirmation === 'boolean')
@@ -94,7 +99,6 @@ function normalizeSignature(
     return { signature: undefined, changed: true };
   }
 
-  let changed = false;
   if (!signatureFileExists(value.uri)) {
     return { signature: undefined, changed: true };
   }
@@ -104,9 +108,9 @@ function normalizeSignature(
     {
       uri: value.uri,
       signerName: signerName && signerName.length > 0 ? signerName : undefined,
-      signedAt: value.signedAt,
-      consentLabel: value.consentLabel.trim() || value.consentLabel,
-      contentDigest: value.contentDigest,
+      signedAt: value.signedAt.trim(),
+      consentLabel: value.consentLabel.trim(),
+      contentDigest: value.contentDigest.trim(),
       needsReconfirmation: value.needsReconfirmation,
     },
     contentDigest,
@@ -116,12 +120,13 @@ function normalizeSignature(
     return { signature: undefined, changed: true };
   }
 
-  if (
-    Boolean(reconciled.needsReconfirmation) !== Boolean(value.needsReconfirmation) ||
-    reconciled.signerName !== value.signerName
-  ) {
-    changed = true;
-  }
+  const changed =
+    reconciled.uri !== value.uri ||
+    reconciled.signerName !== value.signerName ||
+    reconciled.signedAt !== value.signedAt ||
+    reconciled.consentLabel !== value.consentLabel ||
+    reconciled.contentDigest !== value.contentDigest ||
+    Boolean(reconciled.needsReconfirmation) !== Boolean(value.needsReconfirmation);
 
   return { signature: reconciled, changed };
 }
@@ -218,7 +223,7 @@ function migrateReports(parsed: unknown[]): { reports: Report[]; dirty: boolean 
 }
 
 export async function loadReports(): Promise<Report[]> {
-  const raw = await AsyncStorage.getItem(STORAGE_KEY);
+  const raw = await AsyncStorage.getItem(REPORTS_STORAGE_KEY);
   if (!raw) {
     return [];
   }
@@ -241,18 +246,22 @@ export async function loadReports(): Promise<Report[]> {
 }
 
 export async function saveReports(reports: Report[]): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(reports));
+  await withStorageOperation(async () => {
+    await AsyncStorage.setItem(REPORTS_STORAGE_KEY, JSON.stringify(reports));
+  });
 }
 
 export async function upsertReport(report: Report): Promise<Report[]> {
-  const existing = await loadReports();
-  const index = existing.findIndex((item) => item.id === report.id);
-  const next =
-    index >= 0
-      ? existing.map((item, i) => (i === index ? report : item))
-      : [report, ...existing];
-  await saveReports(next);
-  return next;
+  return withStorageOperation(async () => {
+    const existing = await loadReports();
+    const index = existing.findIndex((item) => item.id === report.id);
+    const next =
+      index >= 0
+        ? existing.map((item, i) => (i === index ? report : item))
+        : [report, ...existing];
+    await saveReports(next);
+    return next;
+  });
 }
 
 export async function getReportById(id: string): Promise<Report | null> {

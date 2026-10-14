@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import { cleanupOrphanDocumentFiles } from '@/services/orphan-cleanup';
 import { deleteUnreferencedPhotoFiles } from '@/services/photo-storage';
 import { loadReports, upsertReport } from '@/services/reports-storage';
 import { deleteUnreferencedSignatureFiles } from '@/services/signature-storage';
@@ -50,6 +51,9 @@ export function ReportsProvider({ children }: { children: ReactNode }) {
         }
         setReports(sortReportsNewestFirst(stored));
         setError(null);
+        void cleanupOrphanDocumentFiles().catch(() => {
+          // Orphan cleanup is best-effort and must not block the loaded reports.
+        });
       } catch {
         if (cancelled) {
           return;

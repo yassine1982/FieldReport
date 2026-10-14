@@ -1,7 +1,9 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import { Platform } from 'react-native';
 
-const PDFS_DIR_NAME = 'report-pdfs';
+import { withStorageOperation } from '@/services/storage-operation';
+
+export const PDFS_DIR_NAME = 'report-pdfs';
 
 function pdfsDirectory(): Directory {
   return new Directory(Paths.document, PDFS_DIR_NAME);
@@ -27,26 +29,28 @@ export async function persistPdfFile(
     return sourceUri;
   }
 
-  const dir = ensurePdfsDirectory();
-  const safeName = sanitizePdfFilename(filename);
-  const destination = new File(dir, safeName);
-  const source = new File(sourceUri);
+  return withStorageOperation(async () => {
+    const dir = ensurePdfsDirectory();
+    const safeName = sanitizePdfFilename(filename);
+    const destination = new File(dir, safeName);
+    const source = new File(sourceUri);
 
-  if (!source.exists) {
-    throw new Error('Generated PDF file was not found.');
-  }
+    if (!source.exists) {
+      throw new Error('Generated PDF file was not found.');
+    }
 
-  if (destination.exists) {
-    destination.delete();
-  }
+    if (destination.exists) {
+      destination.delete();
+    }
 
-  await source.copy(destination);
+    await source.copy(destination);
 
-  if (!destination.exists) {
-    throw new Error('Could not store the PDF on this device.');
-  }
+    if (!destination.exists) {
+      throw new Error('Could not store the PDF on this device.');
+    }
 
-  return destination.uri;
+    return destination.uri;
+  });
 }
 
 export function sanitizePdfFilename(filename: string): string {

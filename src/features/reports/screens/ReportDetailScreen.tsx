@@ -15,7 +15,7 @@ import { ReportSignatureSection } from '@/features/reports/components/ReportSign
 import { SignatureCaptureModal } from '@/features/reports/components/SignatureCaptureModal';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { deleteSignatureFile } from '@/services/signature-storage';
+import { deleteSignatureFile, signatureUriToDiscard } from '@/services/signature-storage';
 import type { Report, ReportSignature } from '@/types/report';
 import {
   computeReportContentDigest,
@@ -82,6 +82,13 @@ export function ReportDetailScreen({ reportId }: ReportDetailScreenProps) {
     params: { id: report.id },
   };
 
+  const discardUncommittedSignature = (candidateUri: string | undefined) => {
+    const orphan = signatureUriToDiscard(candidateUri, signatureUri(report.signature));
+    if (orphan) {
+      void deleteSignatureFile(orphan);
+    }
+  };
+
   const persistSignatureUpdate = async (
     nextSignature: ReportSignature | undefined,
     successTitle: string,
@@ -99,6 +106,7 @@ export function ReportDetailScreen({ reportId }: ReportDetailScreenProps) {
       await saveReport(updated);
       Alert.alert(successTitle, successMessage);
     } catch {
+      discardUncommittedSignature(nextSignature?.uri);
       Alert.alert('Save failed', 'Could not update the signature on this report.');
     } finally {
       setSavingSignature(false);
@@ -106,7 +114,6 @@ export function ReportDetailScreen({ reportId }: ReportDetailScreenProps) {
   };
 
   const requestSignatureSave = (signature: ReportSignature) => {
-    const previousUri = signatureUri(report.signature);
     Alert.alert(
       'Save signature?',
       'This updates the existing report on this device. No duplicate report will be created.',
@@ -115,9 +122,7 @@ export function ReportDetailScreen({ reportId }: ReportDetailScreenProps) {
           text: 'Cancel',
           style: 'cancel',
           onPress: () => {
-            if (signature.uri && signature.uri !== previousUri) {
-              void deleteSignatureFile(signature.uri);
-            }
+            discardUncommittedSignature(signature.uri);
           },
         },
         {
@@ -131,6 +136,12 @@ export function ReportDetailScreen({ reportId }: ReportDetailScreenProps) {
           },
         },
       ],
+      {
+        cancelable: true,
+        onDismiss: () => {
+          discardUncommittedSignature(signature.uri);
+        },
+      },
     );
   };
 
