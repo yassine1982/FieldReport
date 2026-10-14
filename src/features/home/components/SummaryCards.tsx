@@ -1,79 +1,99 @@
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import type { ReportStats } from '@/types/report';
 
 type SummaryCardsProps = {
-  stats: ReportStats;
+  completed: number;
+  completedThisMonth: number;
+  drafts: number;
+  onPressDrafts?: () => void;
 };
 
-type SummaryItem = {
-  key: keyof ReportStats;
-  label: string;
-  value: number;
-  accent: 'primary' | 'warning' | 'success';
-};
-
-export function SummaryCards({ stats }: SummaryCardsProps) {
+export function SummaryCards({
+  completed,
+  completedThisMonth,
+  drafts,
+  onPressDrafts,
+}: SummaryCardsProps) {
   const theme = useTheme();
 
-  const items: SummaryItem[] = [
-    { key: 'total', label: 'Total reports', value: stats.total, accent: 'primary' },
-    { key: 'drafts', label: 'Drafts', value: stats.drafts, accent: 'warning' },
-    { key: 'completed', label: 'Completed', value: stats.completed, accent: 'success' },
-  ];
-
   return (
-    <View style={styles.row}>
-      {items.map((item) => {
-        const accentColor =
-          item.accent === 'primary'
-            ? theme.primary
-            : item.accent === 'warning'
-              ? theme.warning
-              : theme.success;
-        const accentBackground =
-          item.accent === 'primary'
-            ? theme.backgroundElement
-            : item.accent === 'warning'
-              ? theme.warningLight
-              : theme.successLight;
-
-        return (
-          <Card key={item.key} style={[styles.card, { backgroundColor: accentBackground }]} padded>
-            <View style={[styles.dot, { backgroundColor: accentColor }]} />
-            <AppText variant="title" style={{ color: accentColor }}>
-              {item.value}
-            </AppText>
+    <View style={styles.section}>
+      <View style={styles.heading}>
+        <AppText variant="subtitle">Your activity</AppText>
+        <View style={[styles.kicker, { backgroundColor: theme.surface }]}>
+          <AppText variant="caption" color="textSecondary">
+            This month
+          </AppText>
+        </View>
+      </View>
+      <View style={styles.row}>
+        <Card style={styles.card}>
+          <AppText variant="caption" color="textSecondary">
+            Completed
+          </AppText>
+          <AppText style={styles.value}>{completed}</AppText>
+          <AppText variant="caption" style={{ color: theme.success }}>
+            +{completedThisMonth} this month
+          </AppText>
+        </Card>
+        <Pressable
+          accessibilityRole={onPressDrafts ? 'button' : undefined}
+          accessibilityLabel={
+            drafts === 1 ? 'Continue 1 draft report' : `Continue ${drafts} draft reports`
+          }
+          disabled={!onPressDrafts}
+          onPress={onPressDrafts}
+          style={styles.cardPress}>
+          <Card style={styles.card}>
             <AppText variant="caption" color="textSecondary">
-              {item.label}
+              Drafts
+            </AppText>
+            <AppText style={styles.value}>{drafts}</AppText>
+            <AppText
+              variant="caption"
+              style={{ color: drafts > 0 ? theme.success : theme.textMuted }}>
+              {drafts > 0 ? 'Continue a report' : 'No drafts right now'}
             </AppText>
           </Card>
-        );
-      })}
+        </Pressable>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  section: {
+    gap: Spacing.three,
+  },
+  heading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  kicker: {
+    borderRadius: Radii.full,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
+  },
   row: {
     flexDirection: 'row',
     gap: Spacing.three,
   },
+  cardPress: {
+    flex: 1,
+  },
   card: {
     flex: 1,
     gap: Spacing.one,
-    minHeight: 96,
-    shadowOpacity: 0,
-    elevation: 0,
+    minHeight: 118,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: Radii.full,
-    marginBottom: Spacing.one,
+  value: {
+    fontSize: 32,
+    lineHeight: 38,
+    fontWeight: '700',
   },
 });

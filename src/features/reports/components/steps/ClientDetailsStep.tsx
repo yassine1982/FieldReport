@@ -15,7 +15,7 @@ export function ClientDetailsStep({ draft, errors, onChange }: ClientDetailsStep
   return (
     <View style={styles.form}>
       <Input
-        label="Client name"
+        label="Client / company"
         value={draft.clientName}
         onChangeText={(value) => onChange('clientName', value)}
         placeholder="Acme Industrial HVAC"
@@ -24,7 +24,7 @@ export function ClientDetailsStep({ draft, errors, onChange }: ClientDetailsStep
         error={errors.clientName}
       />
       <Input
-        label="Client contact (optional)"
+        label="Client contact"
         value={draft.clientContact}
         onChangeText={(value) => onChange('clientContact', value)}
         placeholder="Name, phone, or email"
@@ -32,7 +32,7 @@ export function ClientDetailsStep({ draft, errors, onChange }: ClientDetailsStep
         returnKeyType="next"
       />
       <Input
-        label="Equipment name or ID"
+        label="Equipment"
         value={draft.equipmentName}
         onChangeText={(value) => onChange('equipmentName', value)}
         placeholder="RTU-12 / Chiller CH-04"

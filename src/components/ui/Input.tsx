@@ -1,6 +1,6 @@
 import { StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 
-import { Radii, Spacing, TouchTarget, Typography } from '@/constants/theme';
+import { Radii, Spacing, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 export type InputProps = TextInputProps & {
@@ -42,13 +42,14 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   label: {
-    ...Typography.label,
-    textTransform: 'uppercase',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
   },
   input: {
-    minHeight: TouchTarget.min,
+    minHeight: 52,
     borderWidth: 1,
-    borderRadius: Radii.md,
+    borderRadius: Radii.lg,
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
     ...Typography.body,

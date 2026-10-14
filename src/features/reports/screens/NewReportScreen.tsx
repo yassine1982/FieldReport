@@ -5,12 +5,14 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   StyleSheet,
   View,
 } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
 import { Button } from '@/components/ui/Button';
+import { CircleButton } from '@/components/ui/CircleButton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { useReports } from '@/context/ReportsContext';
@@ -188,7 +190,7 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
       case 1:
         return {
           title: 'Client & equipment',
-          subtitle: 'Capture who you visited and what you worked on.',
+          subtitle: 'Start with who the work is for.',
         };
       case 2:
         return {
@@ -423,7 +425,13 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
 
   const isEditingCompleted = originalStatus === 'completed';
   const nextLabel =
-    step === 5 ? (isEditingCompleted ? 'Save changes' : 'Mark completed') : 'Continue';
+    step === 1
+      ? 'Continue to checklist →'
+      : step === 5
+        ? isEditingCompleted
+          ? 'Save changes'
+          : 'Mark completed'
+        : 'Continue →';
   const showSaveDraft = !isEditingCompleted;
 
   return (
@@ -432,25 +440,21 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
       <Screen>
-        <View style={styles.topBar}>
-          <Button label="Cancel" variant="ghost" onPress={requestLeave} />
-          {showSaveDraft ? (
-            <Button
-              label="Save draft"
-              variant="secondary"
-              onPress={() => void handleSaveDraft()}
-              loading={savingDraft}
-              disabled={savingComplete}
-            />
-          ) : null}
+        <View style={styles.nav}>
+          <CircleButton
+            glyph="‹"
+            accessibilityLabel={step > 1 ? 'Back' : 'Close'}
+            onPress={step > 1 ? goBack : requestLeave}
+          />
+          <View style={styles.navCopy}>
+            <AppText variant="subtitle">New report</AppText>
+            <AppText variant="overline" color="primary" style={styles.stepLabel}>
+              {`Step ${step} of ${TOTAL_STEPS}`}
+            </AppText>
+          </View>
         </View>
 
-        <StepHeader
-          step={step}
-          totalSteps={TOTAL_STEPS}
-          title={stepCopy.title}
-          subtitle={stepCopy.subtitle}
-        />
+        <StepHeader title={stepCopy.title} subtitle={stepCopy.subtitle} />
 
         {step === 1 ? (
           <ClientDetailsStep draft={draft} errors={step1Errors} onChange={updateDraft} />
@@ -525,12 +529,23 @@ function ReportWizard({ initialReport }: ReportWizardProps) {
         ) : null}
 
         <WizardFooter
-          onBack={step > 1 ? goBack : undefined}
           onNext={step === 5 ? () => void handleSaveCompleted() : goNext}
           nextLabel={nextLabel}
           loading={savingComplete}
           disableNext={savingDraft}
         />
+        {showSaveDraft ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Save draft"
+            disabled={savingDraft || savingComplete}
+            onPress={() => void handleSaveDraft()}
+            style={styles.draftHint}>
+            <AppText variant="caption" color="textMuted">
+              {savingDraft ? 'Saving draft…' : 'You can save a draft at any time.'}
+            </AppText>
+          </Pressable>
+        ) : null}
       </Screen>
     </KeyboardAvoidingView>
   );
@@ -578,11 +593,21 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  topBar: {
+  nav: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: -Spacing.two,
+    gap: Spacing.three,
+  },
+  navCopy: {
+    gap: 2,
+  },
+  stepLabel: {
+    textTransform: 'uppercase',
+  },
+  draftHint: {
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
   },
   centered: {
     flex: 1,

@@ -3,44 +3,42 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/ui/AppText';
 import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { Spacing, TouchTarget } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import type { ReportSummary } from '@/types/report';
-import { formatDisplayDate } from '@/utils/report-helpers';
+import { formatCalendarDate, formatRelativeDay, reportReference } from '@/utils/report-helpers';
 
 type ReportListItemProps = {
   report: ReportSummary;
+  dateStyle?: 'relative' | 'calendar';
   onPress?: (report: ReportSummary) => void;
 };
 
-export function ReportListItem({ report, onPress }: ReportListItemProps) {
+export function ReportListItem({ report, dateStyle = 'calendar', onPress }: ReportListItemProps) {
+  const when =
+    dateStyle === 'relative'
+      ? formatRelativeDay(report.interventionDate)
+      : formatCalendarDate(report.interventionDate);
+  const reference = reportReference(report.id);
+
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${report.clientName}, ${report.status}`}
+      accessibilityLabel={`${reference}, ${report.clientName}, ${report.status}`}
       onPress={() => onPress?.(report)}
       style={({ pressed }) => [pressed && styles.pressed]}>
       <Card style={styles.item}>
         <View style={styles.top}>
-          <View style={styles.copy}>
-            <AppText variant="bodyMedium" numberOfLines={1}>
-              {report.clientName}
-            </AppText>
-            <AppText variant="caption" color="textSecondary" numberOfLines={1}>
-              {report.equipmentName}
-            </AppText>
-          </View>
+          <AppText variant="caption" color="textMuted">
+            {reference}
+          </AppText>
           <StatusBadge status={report.status} />
         </View>
-        <View style={styles.meta}>
-          <AppText variant="caption" color="textMuted" numberOfLines={1} style={styles.preview}>
-            {report.status === 'draft'
-              ? report.problemPreview || 'Draft — tap to resume'
-              : report.problemPreview || 'No problem description'}
-          </AppText>
-          <AppText variant="caption" color="textMuted">
-            {formatDisplayDate(report.interventionDate)}
-          </AppText>
-        </View>
+        <AppText variant="bodyMedium" numberOfLines={1}>
+          {report.clientName}
+        </AppText>
+        <AppText variant="caption" color="textSecondary" numberOfLines={1}>
+          {report.equipmentName} · {when}
+        </AppText>
       </Card>
     </Pressable>
   );
@@ -48,27 +46,15 @@ export function ReportListItem({ report, onPress }: ReportListItemProps) {
 
 const styles = StyleSheet.create({
   item: {
-    gap: Spacing.three,
-    minHeight: TouchTarget.min,
+    gap: Spacing.one,
   },
   top: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.three,
-  },
-  copy: {
-    flex: 1,
-    gap: 2,
-  },
-  meta: {
-    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.three,
   },
-  preview: {
-    flex: 1,
-  },
   pressed: {
-    opacity: 0.85,
+    opacity: 0.88,
   },
 });

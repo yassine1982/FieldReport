@@ -1,7 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/AppText';
-import { Radii, Spacing } from '@/constants/theme';
+import { Radii } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { ReportStatus } from '@/types/report';
 
@@ -33,7 +33,7 @@ export { STATUS_LABEL };
 const styles = StyleSheet.create({
   badge: {
     borderRadius: Radii.full,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.one,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
 });

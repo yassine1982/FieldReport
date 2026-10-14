@@ -8,7 +8,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { Radii, Spacing, TouchTarget, Typography } from '@/constants/theme';
+import { Radii, Spacing, Typography } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost';
@@ -35,11 +35,11 @@ export function Button({
     variant === 'primary'
       ? theme.primary
       : variant === 'secondary'
-        ? theme.backgroundElement
+        ? theme.surface
         : 'transparent';
 
   const textColor =
-    variant === 'primary' ? theme.primaryContrast : variant === 'secondary' ? theme.primaryDark : theme.primary;
+    variant === 'primary' ? theme.primaryContrast : variant === 'secondary' ? theme.text : theme.primary;
 
   return (
     <Pressable
@@ -50,7 +50,7 @@ export function Button({
         styles.base,
         {
           backgroundColor,
-          borderColor: variant === 'ghost' ? theme.border : backgroundColor,
+          borderColor: variant === 'primary' ? theme.primary : theme.border,
           opacity: isDisabled ? 0.55 : pressed ? 0.88 : 1,
         },
         variant === 'ghost' && styles.ghost,
@@ -68,8 +68,8 @@ export function Button({
 
 const styles = StyleSheet.create({
   base: {
-    minHeight: TouchTarget.min,
-    borderRadius: Radii.md,
+    minHeight: 52,
+    borderRadius: Radii.lg,
     paddingHorizontal: Spacing.five,
     paddingVertical: Spacing.three,
     alignItems: 'center',

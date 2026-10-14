@@ -31,11 +31,11 @@ export function Card({ padded = true, style, children, ...rest }: CardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: Radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowOffset: { width: 0, height: 4 },
+    borderRadius: Radii.xl,
+    borderWidth: 0,
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 1,
-    shadowRadius: 12,
+    shadowRadius: 18,
     elevation: 2,
   },
   padded: {

@@ -7,22 +7,23 @@ import '@/global.css';
 import { Platform } from 'react-native';
 
 export const Palette = {
-  primary: '#1B6BC8',
-  primaryDark: '#0F4C8A',
-  primaryLight: '#E8F2FC',
-  accent: '#208AEF',
-  success: '#15803D',
-  successLight: '#E8F8EE',
-  warning: '#C2410C',
-  warningLight: '#FFF1E8',
-  danger: '#DC2626',
+  primary: '#2F6BFF',
+  primaryDark: '#1E4FCC',
+  primaryLight: '#EAF1FF',
+  accent: '#2F6BFF',
+  success: '#16A34A',
+  successLight: '#E7F8EE',
+  warning: '#D97706',
+  warningLight: '#FFF4E0',
+  danger: '#E11D48',
+  dangerLight: '#FDE8EE',
   white: '#FFFFFF',
-  background: '#F4F7FB',
-  border: '#D8E1EC',
-  text: '#0F172A',
-  textSecondary: '#5B6B7C',
-  textMuted: '#8A97A6',
-  overlay: 'rgba(15, 23, 42, 0.45)',
+  background: '#F4F6FB',
+  border: '#E4E9F1',
+  text: '#121826',
+  textSecondary: '#5C6778',
+  textMuted: '#8B95A5',
+  overlay: 'rgba(18, 24, 38, 0.45)',
 } as const;
 
 export const Colors = {
@@ -43,7 +44,8 @@ export const Colors = {
     warning: Palette.warning,
     warningLight: Palette.warningLight,
     danger: Palette.danger,
-    cardShadow: 'rgba(15, 76, 138, 0.08)',
+    dangerLight: Palette.dangerLight,
+    cardShadow: 'rgba(18, 24, 38, 0.06)',
   },
   dark: {
     text: '#F8FAFC',
@@ -61,7 +63,8 @@ export const Colors = {
     successLight: '#123124',
     warning: '#FB923C',
     warningLight: '#3A2414',
-    danger: '#F87171',
+    danger: '#FB7185',
+    dangerLight: '#3F1D2A',
     cardShadow: 'rgba(0, 0, 0, 0.35)',
   },
 } as const;

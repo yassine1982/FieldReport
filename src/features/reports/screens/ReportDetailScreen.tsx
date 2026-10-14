@@ -5,6 +5,7 @@ import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/ui/AppText';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { CircleButton } from '@/components/ui/CircleButton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Screen } from '@/components/ui/Screen';
 import { StatusBadge } from '@/components/ui/StatusBadge';
@@ -13,15 +14,17 @@ import { ReportPdfActions } from '@/features/reports/components/ReportPdfActions
 import { ReportPhotosSection } from '@/features/reports/components/ReportPhotosSection';
 import { ReportSignatureSection } from '@/features/reports/components/ReportSignatureSection';
 import { SignatureCaptureModal } from '@/features/reports/components/SignatureCaptureModal';
-import { Spacing } from '@/constants/theme';
+import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { deleteSignatureFile, signatureUriToDiscard } from '@/services/signature-storage';
-import type { Report, ReportSignature } from '@/types/report';
+import type { ChecklistItemStatus, Report, ReportSignature } from '@/types/report';
 import {
   computeReportContentDigest,
   displayClientName,
+  formatCalendarDate,
   formatDisplayDate,
   reconcileSignatureWithContent,
+  reportReference,
   signatureUri,
 } from '@/utils/report-helpers';
 
@@ -29,12 +32,12 @@ type ReportDetailScreenProps = {
   reportId: string;
 };
 
-function checklistStatusLabel(status: string): string {
+function checklistStatusLabel(status: ChecklistItemStatus | string): string {
   switch (status) {
     case 'pass':
       return 'Pass';
     case 'fail':
-      return 'Fail';
+      return 'Issue found';
     case 'na':
       return 'N/A';
     default:
@@ -189,83 +192,125 @@ export function ReportDetailScreen({ reportId }: ReportDetailScreenProps) {
     ]);
   };
 
+  const reference = reportReference(report.id);
+  const locationLine = [report.clientContact?.trim(), formatCalendarDate(report.interventionDate)]
+    .filter(Boolean)
+    .join(' · ');
+  const checklistCount =
+    report.checklist.length === 1 ? '1 item' : `${report.checklist.length} items`;
+
+  const openMenu = () => {
+    Alert.alert(displayClientName(report.clientName), reference, [
+      {
+        text: isDraft ? 'Resume draft' : 'Edit report',
+        onPress: () => router.push(editHref),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
   return (
     <Screen>
-      <View style={styles.header}>
-        <StatusBadge status={report.status} />
-        <AppText variant="brand">{displayClientName(report.clientName)}</AppText>
-        <AppText variant="body" color="textSecondary">
-          {report.equipmentName.trim() || 'No equipment listed'}
-        </AppText>
-        <AppText variant="caption" color="textMuted">
-          Intervention {formatDisplayDate(report.interventionDate)}
-        </AppText>
-      </View>
-
-      <View style={styles.actions}>
-        <Button
-          label={isDraft ? 'Resume draft' : 'Edit report'}
-          onPress={() => router.push(editHref)}
+      <View style={styles.nav}>
+        <CircleButton
+          glyph="‹"
+          accessibilityLabel="Back"
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+              return;
+            }
+            router.replace('/reports');
+          }}
         />
-        <ReportPdfActions report={report} />
-        <Button label="Back to reports" variant="secondary" onPress={() => router.back()} />
+        <View style={styles.navCopy}>
+          <AppText variant="subtitle">Report details</AppText>
+        </View>
+        <AppText variant="caption" color="textMuted">
+          {reference}
+        </AppText>
+        <CircleButton glyph="⋯" accessibilityLabel="More actions" onPress={openMenu} />
       </View>
 
-      {report.clientContact ? (
-        <Card style={styles.section}>
-          <AppText variant="label" color="textMuted">
-            CONTACT
+      <Card style={styles.summary}>
+        <View style={styles.summaryTop}>
+          <AppText variant="caption" color="textMuted">
+            {reference}
           </AppText>
-          <AppText variant="body">{report.clientContact}</AppText>
+          <StatusBadge status={report.status} />
+        </View>
+        <AppText variant="title">{displayClientName(report.clientName)}</AppText>
+        <AppText variant="body" color="textSecondary">
+          {locationLine}
+        </AppText>
+        <AppText variant="bodyMedium">{report.equipmentName.trim() || 'No equipment listed'}</AppText>
+      </Card>
+
+      <View style={styles.block}>
+        <View style={styles.blockHeading}>
+          <AppText variant="subtitle">Inspection checklist</AppText>
+          <View style={[styles.meta, { backgroundColor: theme.surface }]}>
+            <AppText variant="caption" color="textSecondary">
+              {checklistCount}
+            </AppText>
+          </View>
+        </View>
+        <Card style={styles.section}>
+          {report.checklist.map((item, index) => {
+            const tone =
+              item.status === 'pass' ? 'success' : item.status === 'fail' ? 'danger' : 'muted';
+            const pillColor =
+              tone === 'success' ? theme.success : tone === 'danger' ? theme.danger : theme.textMuted;
+            const pillBackground =
+              tone === 'success'
+                ? theme.successLight
+                : tone === 'danger'
+                  ? theme.dangerLight
+                  : theme.background;
+            return (
+              <View
+                key={item.id}
+                style={[
+                  styles.checklistRow,
+                  index < report.checklist.length - 1 && {
+                    borderBottomColor: theme.border,
+                    borderBottomWidth: StyleSheet.hairlineWidth,
+                  },
+                ]}>
+                <AppText variant="body" style={styles.checklistLabel}>
+                  {item.label}
+                </AppText>
+                <View style={[styles.pill, { backgroundColor: pillBackground }]}>
+                  <AppText variant="caption" style={{ color: pillColor }}>
+                    {checklistStatusLabel(item.status)}
+                  </AppText>
+                </View>
+              </View>
+            );
+          })}
         </Card>
-      ) : null}
+      </View>
+
+      <ReportPhotosSection photos={report.photos ?? []} />
+
+      <ReportPdfActions report={report} />
 
       <Card style={styles.section}>
-        <AppText variant="label" color="textMuted">
-          PROBLEM
-        </AppText>
+        <AppText variant="subtitle">Problem</AppText>
         <AppText variant="body">
           {report.problemDescription.trim() || (isDraft ? 'Not filled in yet' : '—')}
         </AppText>
       </Card>
 
       <Card style={styles.section}>
-        <AppText variant="label" color="textMuted">
-          CHECKLIST
-        </AppText>
-        {report.checklist.map((item) => (
-          <View key={item.id} style={styles.checklistRow}>
-            <AppText variant="body" style={styles.checklistLabel}>
-              {item.label}
-            </AppText>
-            <AppText
-              variant="label"
-              color={
-                item.status === 'pass'
-                  ? 'success'
-                  : item.status === 'fail'
-                    ? 'danger'
-                    : 'textMuted'
-              }>
-              {checklistStatusLabel(item.status)}
-            </AppText>
-          </View>
-        ))}
-      </Card>
-
-      <Card style={styles.section}>
-        <AppText variant="label" color="textMuted">
-          OBSERVATIONS
-        </AppText>
+        <AppText variant="subtitle">Observations</AppText>
         <AppText variant="body">
           {report.observations.trim() || (isDraft ? 'Not filled in yet' : '—')}
         </AppText>
       </Card>
 
       <Card style={styles.section}>
-        <AppText variant="label" color="textMuted">
-          IDENTIFIED ISSUES
-        </AppText>
+        <AppText variant="subtitle">Identified issues</AppText>
         {report.identifiedIssues.length === 0 ? (
           <AppText variant="body" color="textMuted">
             None listed
@@ -278,8 +323,6 @@ export function ReportDetailScreen({ reportId }: ReportDetailScreenProps) {
           ))
         )}
       </Card>
-
-      <ReportPhotosSection photos={report.photos ?? []} />
 
       <ReportSignatureSection
         signature={signature}
@@ -316,11 +359,35 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     paddingVertical: Spacing.eight,
   },
-  header: {
+  nav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  navCopy: {
+    flex: 1,
+  },
+  summary: {
     gap: Spacing.two,
   },
-  actions: {
+  summaryTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: Spacing.three,
+  },
+  block: {
+    gap: Spacing.three,
+  },
+  blockHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  meta: {
+    borderRadius: Radii.full,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
   },
   section: {
     gap: Spacing.two,
@@ -330,9 +397,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.three,
-    paddingVertical: Spacing.one,
+    paddingVertical: Spacing.three,
   },
   checklistLabel: {
     flex: 1,
+  },
+  pill: {
+    borderRadius: Radii.full,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
 });

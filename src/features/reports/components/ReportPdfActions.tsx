@@ -56,32 +56,28 @@ export function ReportPdfActions({ report }: ReportPdfActionsProps) {
 
   return (
     <View style={styles.stack}>
-      <AppText variant="label" color="textMuted">
-        PDF EXPORT
-      </AppText>
-      {canExport ? (
-        <AppText variant="caption" color="textSecondary">
-          Generate a printable A4 report from the saved data and current company profile on this
-          device. Branding is configured in Settings.
-        </AppText>
-      ) : (
+      {canExport ? null : (
         <AppText variant="caption" color="warning">
           Complete this report to enable PDF preview and sharing.
         </AppText>
       )}
-      <Button
-        label="Preview PDF"
-        variant="secondary"
-        loading={busyAction === 'preview'}
-        disabled={!canExport || (isBusy && busyAction !== 'preview')}
-        onPress={() => void runAction('preview')}
-      />
-      <Button
-        label="Share PDF"
-        loading={busyAction === 'share'}
-        disabled={!canExport || (isBusy && busyAction !== 'share')}
-        onPress={() => void runAction('share')}
-      />
+      <View style={styles.row}>
+        <Button
+          label="Preview PDF"
+          variant="secondary"
+          loading={busyAction === 'preview'}
+          disabled={!canExport || (isBusy && busyAction !== 'preview')}
+          onPress={() => void runAction('preview')}
+          style={styles.action}
+        />
+        <Button
+          label="Share PDF"
+          loading={busyAction === 'share'}
+          disabled={!canExport || (isBusy && busyAction !== 'share')}
+          onPress={() => void runAction('share')}
+          style={styles.action}
+        />
+      </View>
     </View>
   );
 }
@@ -89,5 +85,13 @@ export function ReportPdfActions({ report }: ReportPdfActionsProps) {
 const styles = StyleSheet.create({
   stack: {
     gap: Spacing.two,
+  },
+  row: {
+    flexDirection: 'row',
+    gap: Spacing.three,
+  },
+  action: {
+    flex: 1,
+    paddingHorizontal: Spacing.three,
   },
 });

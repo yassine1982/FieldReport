@@ -56,6 +56,60 @@ export function sortReportsNewestFirst(reports: Report[]): Report[] {
   );
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+export function parseReportDate(isoDate: string): Date | null {
+  const normalized = isoDate.includes('T') ? isoDate : `${isoDate}T12:00:00`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** Stable display code for list and detail headers. Not stored on the report. */
+export function reportReference(id: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < id.length; index += 1) {
+    hash ^= id.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  const code = (hash >>> 0) % 9000 + 1000;
+  return `FR-${code}`;
+}
+
+export function formatCalendarDate(isoDate: string): string {
+  const date = parseReportDate(isoDate);
+  if (!date) {
+    return isoDate;
+  }
+  return `${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+export function formatRelativeDay(isoDate: string, now = new Date()): string {
+  const date = parseReportDate(isoDate);
+  if (!date) {
+    return isoDate;
+  }
+  const startOfDay = (value: Date) =>
+    new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  if (diffDays === 0) {
+    return 'Today';
+  }
+  if (diffDays === 1) {
+    return 'Yesterday';
+  }
+  return formatCalendarDate(isoDate);
+}
+
+export function countCompletedThisMonth(reports: readonly Report[], now = new Date()): number {
+  return reports.filter((report) => {
+    if (report.status !== 'completed') {
+      return false;
+    }
+    const date = parseReportDate(report.interventionDate);
+    return date?.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+  }).length;
+}
+
 export function formatDisplayDate(isoDate: string): string {
   const normalized = isoDate.includes('T') ? isoDate : `${isoDate}T12:00:00`;
   const date = new Date(normalized);
