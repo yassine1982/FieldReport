@@ -1,56 +1,83 @@
-# Welcome to your Expo app 👋
+# FieldReport
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Mobile app for independent maintenance technicians to create professional intervention reports — clients, equipment, checklists, photos, signatures, and PDF export.
 
-## Get started
+**Current milestone:** Local New Report creation flow with checklist, observations, AsyncStorage persistence, and report detail views. Auth, Supabase, payments, PDF, photos, and signatures are intentionally not included yet.
 
-1. Install dependencies
+## Stack
 
-   ```bash
-   npm install
-   ```
+- Expo SDK 57 + React Native
+- Expo Router (file-based navigation)
+- TypeScript (strict)
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Setup
 
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Then press `i` for iOS simulator, `a` for Android, or `w` for web. Or open in Expo Go.
 
-### Other setup steps
+Target a booted simulator directly:
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+```bash
+npx expo start --ios
+```
 
-## Learn more
+## Scripts
 
-To learn more about developing your project with Expo, look at the following resources:
+| Command | Purpose |
+| --- | --- |
+| `npm start` / `npx expo start` | Start Metro |
+| `npm run ios` | Start and open iOS |
+| `npm run android` | Start and open Android |
+| `npm run lint` | ESLint via Expo |
+| `npm run typecheck` | `tsc --noEmit` |
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Architecture
 
-## Join the community
+Feature-based layout under `src/`. Routes stay thin; screens and domain UI live in features.
 
-Join our community of developers creating universal apps.
+```
+src/
+  app/
+    (tabs)/            # Home, Reports, Clients, Settings
+    report/new.tsx     # Multi-step create flow
+    report/[id].tsx    # Report detail
+  components/ui/       # Button, Card, Input, Screen, AppText, EmptyState, StatusBadge
+  context/             # ReportsProvider (live list + save)
+  services/            # AsyncStorage persistence
+  features/
+    home/              # Dashboard cards + recent reports from saved data
+    reports/           # Wizard steps, list, detail
+    clients|settings/  # Placeholders
+  types/report.ts      # Report, checklist, draft types
+  utils/               # IDs, stats, date helpers
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Path alias: `@/*` → `src/*`
+
+Local reports are stored with `@react-native-async-storage/async-storage` under key `fieldreport.reports.v1`.
+
+## Design system
+
+Professional blue / white palette with reusable tokens:
+
+- **Primary:** `#1B6BC8`
+- **Background:** `#F4F7FB`
+- **Surfaces:** white cards with light borders
+- **Touch targets:** minimum 44pt
+- Components: `Button`, `Card`, `Input`, `Screen`, `AppText`
+
+## Product roadmap (high level)
+
+1. Home + design system
+2. Local report creation + persistence *(this milestone)*
+3. Photos + client signature
+4. PDF export / sharing
+5. Auth, sync, Free/Pro limits
+
+## License
+
+See [LICENSE](./LICENSE).
